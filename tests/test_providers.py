@@ -1,6 +1,6 @@
 import unittest
 
-from autonomy_score import score_intent
+from llm_bidding.scoring import score_task_intent
 
 from llm_bidding.models import AgentProfile, BidRequest
 from llm_bidding.providers import (
@@ -25,7 +25,7 @@ AGENT = AgentProfile(
 
 
 def _request(task_text: str) -> BidRequest:
-    return BidRequest(task_text=task_text, intent=score_intent(task_text))
+    return BidRequest(task_text=task_text, intent=score_task_intent(task_text))
 
 
 class MockProviderTests(unittest.TestCase):

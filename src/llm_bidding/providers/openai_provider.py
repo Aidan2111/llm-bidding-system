@@ -14,6 +14,7 @@ from .base import (
     MissingApiKeyError,
     MissingDependencyError,
     build_user_payload,
+    classify_provider_exception,
 )
 
 
@@ -63,7 +64,7 @@ class OpenAIBidProvider:
                 'Upgrade with: pip install -U "openai>=1.68.0"'
             ) from exc
         except Exception as exc:
-            raise BidProviderError(f"OpenAI-compatible bid request failed: {exc}") from exc
+            raise classify_provider_exception(exc, "OpenAI-compatible") from exc
         raw_text = getattr(response, "output_text", None)
         if not isinstance(raw_text, str) or not raw_text.strip():
             raise BidProviderError("OpenAI response did not include output_text.")

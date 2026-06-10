@@ -13,6 +13,7 @@ from .base import (
     MissingApiKeyError,
     MissingDependencyError,
     build_user_payload,
+    classify_provider_exception,
 )
 
 
@@ -57,7 +58,7 @@ class AnthropicBidProvider:
                 tool_choice={"type": "tool", "name": "submit_bid"},
             )
         except Exception as exc:
-            raise BidProviderError(f"Anthropic bid request failed: {exc}") from exc
+            raise classify_provider_exception(exc, "Anthropic") from exc
         for block in response.content:
             if getattr(block, "type", None) == "tool_use" and block.name == "submit_bid":
                 try:

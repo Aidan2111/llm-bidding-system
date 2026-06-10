@@ -10,19 +10,20 @@ import sys
 from pathlib import Path
 from typing import Mapping
 
-from autonomy_score import score_change
-from autonomy_score.diff_parser import parse_unified_diff
-
 from .auction import run_auction
 from .config import BiddingConfig, ConfigError, load_config
 from .history import HistoryError, HistoryStore
 from .models import AuctionResult, OutcomeReport
 from .providers import BidProvider, BidProviderError, build_providers
+from .scoring import (
+    BANDS,
+    ScoringCompatibilityError,
+    detect_scope_drift,
+    score_result_diff,
+)
 
 MAX_INTENT_BYTES = 100_000
 MAX_DIFF_BYTES = 2_000_000
-
-BANDS = ("Low Risk", "Medium Risk", "High Risk")
 
 EXIT_OK = 0
 EXIT_ERROR = 1
@@ -79,6 +80,18 @@ def _build_parser() -> argparse.ArgumentParser:
     agents = subparsers.add_parser("agents", help="Inspect configured agents.")
     agents.add_argument("action", choices=("list",))
 
+    show = subparsers.add_parser("show", help="Show a stored auction in full.")
+    show.add_argument("--auction-id", required=True)
+
+    history = subparsers.add_parser("history", help="List recent auctions.")
+    history.add_argument("--limit", type=int, default=20)
+
+    export = subparsers.add_parser("export", help="Export all history as JSONL.")
+    export.add_argument("--output", help="Write to a file instead of stdout.")
+
+    prune = subparsers.add_parser("prune", help="Delete auctions older than N days.")
+    prune.add_argument("--keep-days", type=int, required=True)
+
     return parser
 
 
@@ -107,15 +120,18 @@ def _format_auction_text(result: AuctionResult) -> str:
         f"Auction {result.auction_id}  ({result.created_at})",
         f"Intent: score {result.intent.score} | {result.intent.band} | "
         + (", ".join(s.name for s in result.intent.signals) or "no signals"),
+        f"Supervision: {result.intent.recommended_mode}",
         "",
         f"{'agent':<16}{'conf':>6}{'cal':>6}{'cost $':>9}{'quality':>9}"
         f"{'price':>7}{'fit':>6}{'utility':>9}",
     ]
     for scored in result.bids:
         if scored.is_valid:
-            marker = "  <- WINNER" if (
-                result.winner and scored.agent_name == result.winner.agent_name
-            ) else ""
+            marker = ""
+            if result.winner and scored.agent_name == result.winner.agent_name:
+                marker = "  <- WINNER"
+            elif not scored.eligible:
+                marker = f"  INELIGIBLE: {scored.ineligible_reason}"
             lines.append(
                 f"{scored.agent_name:<16}"
                 f"{scored.bid.confidence:>6.2f}"
@@ -170,7 +186,8 @@ def _format_stats_text(rows: list[dict[str, object]]) -> str:
         )
         lines.append(
             f"  brier {brier if brier is None else format(brier, '.3f')},"
-            f" calibration offset {row['calibration_offset']:+.3f}"
+            f" calibration offset {row['calibration_offset']:+.3f},"
+            f" cost ratio {row['cost_ratio']:.2f}x, scope drifts {row['drifts']}"
         )
         for band_name, band_row in (row.get("bands") or {}).items():
             lines.append(
@@ -209,6 +226,22 @@ def run(
                 return _cmd_stats(args, config, store)
             if args.command == "agents":
                 return _cmd_agents(args, config, store)
+            if args.command == "show":
+                return _cmd_show(args, store)
+            if args.command == "history":
+                return _cmd_history(args, store)
+            if args.command == "export":
+                return _cmd_export(args, store)
+            if args.command == "prune":
+                return _cmd_prune(args, store)
+    except ScoringCompatibilityError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    except BrokenPipeError:
+        # Downstream consumer (e.g. `llm-bid export | head`) closed the pipe.
+        devnull = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull, sys.stdout.fileno())
+        return EXIT_OK
     except (ConfigError, HistoryError, BidProviderError, ValueError, OSError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -256,10 +289,20 @@ def _cmd_bid(
 
 def _cmd_report(args: argparse.Namespace, store: HistoryStore) -> int:
     diff_score = None
+    scope_drift = None
+    gate_score = None
+    intent_score = None
     if args.diff:
         diff_text = _read_input(args.diff, max_bytes=MAX_DIFF_BYTES, label="Diff")
-        changed_files = parse_unified_diff(diff_text)
-        diff_score = score_change(changed_files).score
+        diff_result = score_result_diff(diff_text)
+        diff_score = diff_result.score
+        # Drift is judged against the intent stored at auction time.
+        auction = store.get_auction(args.auction_id)
+        intent_score = auction["intent_score"]
+        scope_drift = detect_scope_drift(
+            intent_score, auction["intent_band"], diff_result.score, diff_result.band
+        )
+        gate_score = max(intent_score, diff_result.score)
     report = OutcomeReport(
         auction_id=args.auction_id,
         success=bool(args.success),
@@ -269,6 +312,8 @@ def _cmd_report(args: argparse.Namespace, store: HistoryStore) -> int:
         notes=args.notes,
         diff_score=diff_score,
         actual_cost_usd=args.actual_cost,
+        scope_drift=scope_drift,
+        gate_score=gate_score,
     )
     store.record_outcome(report)
     if args.format == "json":
@@ -276,7 +321,102 @@ def _cmd_report(args: argparse.Namespace, store: HistoryStore) -> int:
     else:
         outcome = "success" if report.success else "failure"
         extra = f", diff score {diff_score}" if diff_score is not None else ""
+        if scope_drift:
+            extra += f", SCOPE DRIFT (intent {intent_score} -> diff {diff_score})"
         print(f"Recorded {outcome} for auction {report.auction_id}{extra}.")
+    return EXIT_OK
+
+
+def _cmd_show(args: argparse.Namespace, store: HistoryStore) -> int:
+    record = store.get_auction(args.auction_id)
+    if args.format == "json":
+        print(json.dumps(record, indent=2, sort_keys=True))
+        return EXIT_OK
+    lines = [
+        f"Auction {record['id']}  ({record['created_at']})",
+        f"Task: {record['task_text']}",
+        f"Intent: score {record['intent_score']} | {record['intent_band']} | "
+        + (", ".join(record["intent_signals"]) or "no signals"),
+        f"Supervision: {record['recommended_mode'] or 'unknown'}"
+        f"  (scored by agent-autonomy-score {record['scoring_version'] or 'unknown'})",
+        f"Winner: {record['winner_agent'] or 'none'}",
+        "",
+    ]
+    for bid in record["bids"]:
+        if bid["error"]:
+            lines.append(f"  {bid['agent_name']:<16}FAILED: {bid['error']}")
+        else:
+            line = (
+                f"  {bid['agent_name']:<16}conf {bid['confidence']:.2f}"
+                f"  cost ${bid['estimated_cost_usd']:.4f}  utility {bid['utility']:.3f}"
+            )
+            if bid["won"]:
+                line += "  <- WINNER"
+            elif bid["eligible"] == 0:
+                line += f"  INELIGIBLE: {bid['ineligible_reason']}"
+            lines.append(line)
+    outcome = record["outcome"]
+    if outcome is None:
+        lines += ["", "Outcome: not reported yet"]
+    else:
+        status = "success" if outcome["success"] else "failure"
+        lines += ["", f"Outcome: {status} ({outcome['reported_at']})"]
+        if outcome["notes"]:
+            lines.append(f"  notes: {outcome['notes']}")
+        if outcome["diff_score"] is not None:
+            drift = ""
+            if outcome["scope_drift"]:
+                drift = (
+                    f"  SCOPE DRIFT (intent {record['intent_score']}"
+                    f" -> diff {outcome['diff_score']})"
+                )
+            lines.append(
+                f"  diff score {outcome['diff_score']},"
+                f" gate score {outcome['gate_score']}{drift}"
+            )
+        if outcome["actual_cost_usd"] is not None:
+            lines.append(f"  actual cost ${outcome['actual_cost_usd']:.4f}")
+    print("\n".join(lines))
+    return EXIT_OK
+
+
+def _cmd_history(args: argparse.Namespace, store: HistoryStore) -> int:
+    rows = store.list_recent(args.limit)
+    if args.format == "json":
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        return EXIT_OK
+    if not rows:
+        print("No auctions recorded.")
+        return EXIT_OK
+    lines = [f"{'auction':<14}{'created':<27}{'band':<13}{'winner':<16}{'outcome'}"]
+    for row in rows:
+        outcome = "-" if row["outcome"] is None else ("ok" if row["outcome"] else "FAIL")
+        lines.append(
+            f"{row['auction_id']:<14}{row['created_at']:<27}"
+            f"{row['intent_band']:<13}{row['winner'] or '-':<16}{outcome}"
+        )
+    print("\n".join(lines))
+    return EXIT_OK
+
+
+def _cmd_export(args: argparse.Namespace, store: HistoryStore) -> int:
+    lines = (json.dumps(row, sort_keys=True) for row in store.export_rows())
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as handle:
+            count = 0
+            for line in lines:
+                handle.write(line + "\n")
+                count += 1
+        print(f"Exported {count} rows to {args.output}.")
+    else:
+        for line in lines:
+            print(line)
+    return EXIT_OK
+
+
+def _cmd_prune(args: argparse.Namespace, store: HistoryStore) -> int:
+    deleted = store.prune(args.keep_days)
+    print(f"Deleted {deleted} auction(s) older than {args.keep_days} day(s).")
     return EXIT_OK
 
 

@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 import sqlite3
 from pathlib import Path
 
-from .calibration import brier_score, calibration_offset, shrunk_success_rate
+from .calibration import (
+    brier_score,
+    calibration_offset,
+    shrunk_cost_ratio,
+    shrunk_success_rate,
+)
 from .config import CalibrationParams
 from .models import AgentStats, AuctionResult, OutcomeReport
 
@@ -55,7 +61,20 @@ CREATE TABLE IF NOT EXISTS outcomes (
 );
 """
 
-_SCHEMA_VERSION = 1
+_LATEST_SCHEMA_VERSION = 2
+
+# Each entry upgrades from version N-1 to N. New columns must be nullable so
+# rows recorded under older schemas keep working (NULL means "pre-upgrade").
+_MIGRATIONS: dict[int, tuple[str, ...]] = {
+    2: (
+        "ALTER TABLE auctions ADD COLUMN scoring_version TEXT",
+        "ALTER TABLE auctions ADD COLUMN recommended_mode TEXT",
+        "ALTER TABLE bids ADD COLUMN eligible INTEGER",
+        "ALTER TABLE bids ADD COLUMN ineligible_reason TEXT",
+        "ALTER TABLE outcomes ADD COLUMN scope_drift INTEGER",
+        "ALTER TABLE outcomes ADD COLUMN gate_score INTEGER",
+    ),
+}
 
 
 class HistoryStore:
@@ -69,13 +88,34 @@ class HistoryStore:
             self.path = str(db_path)
         self._connection = sqlite3.connect(self.path)
         self._connection.row_factory = sqlite3.Row
+        self._connection.execute("PRAGMA busy_timeout = 5000")
+        if self.path != ":memory:":
+            self._connection.execute("PRAGMA journal_mode = WAL")
+        self._migrate()
+
+    def _migrate(self) -> None:
         with self._connection:
             self._connection.executescript(_SCHEMA)
             row = self._connection.execute("SELECT version FROM schema_version").fetchone()
             if row is None:
                 self._connection.execute(
-                    "INSERT INTO schema_version (version) VALUES (?)", (_SCHEMA_VERSION,)
+                    "INSERT INTO schema_version (version) VALUES (1)"
                 )
+                current = 1
+            else:
+                current = row["version"]
+        for version in range(current + 1, _LATEST_SCHEMA_VERSION + 1):
+            with self._connection:
+                for statement in _MIGRATIONS[version]:
+                    self._connection.execute(statement)
+                self._connection.execute(
+                    "UPDATE schema_version SET version = ?", (version,)
+                )
+
+    @property
+    def schema_version(self) -> int:
+        row = self._connection.execute("SELECT version FROM schema_version").fetchone()
+        return row["version"]
 
     def close(self) -> None:
         self._connection.close()
@@ -92,8 +132,9 @@ class HistoryStore:
         with self._connection:
             self._connection.execute(
                 "INSERT INTO auctions (id, created_at, task_text, intent_score,"
-                " intent_band, intent_signals, weights_json, winner_agent)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                " intent_band, intent_signals, weights_json, winner_agent,"
+                " scoring_version, recommended_mode)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     result.auction_id,
                     result.created_at,
@@ -103,6 +144,8 @@ class HistoryStore:
                     signals,
                     json.dumps(result.weights, sort_keys=True),
                     winner,
+                    result.scoring_version or None,
+                    result.intent.recommended_mode,
                 ),
             )
             for scored in result.bids:
@@ -110,7 +153,8 @@ class HistoryStore:
                 self._connection.execute(
                     "INSERT INTO bids (auction_id, agent_name, model_id, confidence,"
                     " approach, estimated_cost_usd, quality, price, risk_fit, utility,"
-                    " won, error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " won, error, eligible, ineligible_reason)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         result.auction_id,
                         scored.agent_name,
@@ -124,6 +168,8 @@ class HistoryStore:
                         scored.utility,
                         1 if winner == scored.agent_name else 0,
                         scored.error,
+                        1 if scored.eligible else 0,
+                        scored.ineligible_reason,
                     ),
                 )
 
@@ -147,7 +193,8 @@ class HistoryStore:
         with self._connection:
             self._connection.execute(
                 "INSERT INTO outcomes (auction_id, success, reported_at, notes,"
-                " diff_score, actual_cost_usd) VALUES (?, ?, ?, ?, ?, ?)",
+                " diff_score, actual_cost_usd, scope_drift, gate_score)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     report.auction_id,
                     1 if report.success else 0,
@@ -155,6 +202,8 @@ class HistoryStore:
                     report.notes,
                     report.diff_score,
                     report.actual_cost_usd,
+                    None if report.scope_drift is None else int(report.scope_drift),
+                    report.gate_score,
                 ),
             )
 
@@ -177,7 +226,10 @@ class HistoryStore:
         wins = counts["wins"]
 
         outcome_rows = self._connection.execute(
-            "SELECT bids.confidence AS confidence, outcomes.success AS success"
+            "SELECT bids.confidence AS confidence, outcomes.success AS success,"
+            " bids.estimated_cost_usd AS estimated_cost,"
+            " outcomes.actual_cost_usd AS actual_cost,"
+            " outcomes.scope_drift AS scope_drift"
             " FROM bids"
             " JOIN auctions ON auctions.id = bids.auction_id"
             " JOIN outcomes ON outcomes.auction_id = bids.auction_id"
@@ -191,6 +243,14 @@ class HistoryStore:
         ]
         outcomes_reported = len(outcome_rows)
         successes = sum(1 for row in outcome_rows if row["success"])
+        cost_ratios = [
+            float(row["actual_cost"]) / float(row["estimated_cost"])
+            for row in outcome_rows
+            if row["actual_cost"] is not None
+            and row["estimated_cost"] is not None
+            and row["estimated_cost"] > 0
+        ]
+        drifts = sum(1 for row in outcome_rows if row["scope_drift"])
 
         return AgentStats(
             agent_name=agent_name,
@@ -203,6 +263,8 @@ class HistoryStore:
             success_rate=shrunk_success_rate(successes, outcomes_reported, params),
             brier_score=brier_score(pairs),
             calibration_offset=calibration_offset(pairs, params),
+            cost_ratio=shrunk_cost_ratio(cost_ratios, params),
+            drifts=drifts,
         )
 
     def signal_stats(
@@ -249,7 +311,8 @@ class HistoryStore:
     def list_recent(self, limit: int = 20) -> list[dict[str, object]]:
         rows = self._connection.execute(
             "SELECT auctions.id, auctions.created_at, auctions.intent_score,"
-            " auctions.intent_band, auctions.winner_agent, outcomes.success"
+            " auctions.intent_band, auctions.recommended_mode,"
+            " auctions.winner_agent, outcomes.success"
             " FROM auctions LEFT JOIN outcomes ON outcomes.auction_id = auctions.id"
             " ORDER BY auctions.created_at DESC LIMIT ?",
             (limit,),
@@ -260,8 +323,83 @@ class HistoryStore:
                 "created_at": row["created_at"],
                 "intent_score": row["intent_score"],
                 "intent_band": row["intent_band"],
+                "recommended_mode": row["recommended_mode"],
                 "winner": row["winner_agent"],
                 "outcome": None if row["success"] is None else bool(row["success"]),
             }
             for row in rows
         ]
+
+    def get_auction(self, auction_id: str) -> dict[str, object]:
+        """Full stored record for one auction: row, bids, and any outcome."""
+        auction = self._connection.execute(
+            "SELECT * FROM auctions WHERE id = ?", (auction_id,)
+        ).fetchone()
+        if auction is None:
+            raise HistoryError(f"No auction with id {auction_id!r}.")
+        bids = self._connection.execute(
+            "SELECT * FROM bids WHERE auction_id = ?"
+            " ORDER BY utility DESC, estimated_cost_usd ASC, agent_name ASC",
+            (auction_id,),
+        ).fetchall()
+        outcome = self._connection.execute(
+            "SELECT * FROM outcomes WHERE auction_id = ?", (auction_id,)
+        ).fetchone()
+        record = dict(auction)
+        record["intent_signals"] = json.loads(record["intent_signals"])
+        record["weights"] = json.loads(record.pop("weights_json"))
+        record["bids"] = [dict(row) for row in bids]
+        record["outcome"] = dict(outcome) if outcome is not None else None
+        return record
+
+    def export_rows(self):
+        """Yield every auction, bid, and outcome as a typed flat dict (JSONL-ready)."""
+        for row in self._connection.execute(
+            "SELECT * FROM auctions ORDER BY created_at ASC, id ASC"
+        ):
+            data = dict(row)
+            data["intent_signals"] = json.loads(data["intent_signals"])
+            data["weights"] = json.loads(data.pop("weights_json"))
+            yield {"type": "auction", **data}
+        for row in self._connection.execute(
+            "SELECT * FROM bids ORDER BY auction_id ASC, agent_name ASC"
+        ):
+            yield {"type": "bid", **dict(row)}
+        for row in self._connection.execute(
+            "SELECT * FROM outcomes ORDER BY auction_id ASC"
+        ):
+            yield {"type": "outcome", **dict(row)}
+
+    def prune(self, keep_days: int, *, now: str | None = None) -> int:
+        """Delete auctions (and their bids/outcomes) older than keep_days."""
+        if keep_days < 0:
+            raise HistoryError("keep_days must be >= 0.")
+        reference = (
+            datetime.datetime.fromisoformat(now)
+            if now
+            else datetime.datetime.now(datetime.timezone.utc)
+        )
+        cutoff = (reference - datetime.timedelta(days=keep_days)).isoformat(
+            timespec="seconds"
+        )
+        with self._connection:
+            ids = [
+                row["id"]
+                for row in self._connection.execute(
+                    "SELECT id FROM auctions WHERE created_at < ?", (cutoff,)
+                )
+            ]
+            if not ids:
+                return 0
+            placeholders = ",".join("?" for _ in ids)
+            # No ON DELETE CASCADE in the schema; cascade manually.
+            self._connection.execute(
+                f"DELETE FROM outcomes WHERE auction_id IN ({placeholders})", ids
+            )
+            self._connection.execute(
+                f"DELETE FROM bids WHERE auction_id IN ({placeholders})", ids
+            )
+            self._connection.execute(
+                f"DELETE FROM auctions WHERE id IN ({placeholders})", ids
+            )
+        return len(ids)

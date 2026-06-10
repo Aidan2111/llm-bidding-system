@@ -121,6 +121,36 @@ class DepIntegrationTests(unittest.TestCase):
         store.record_auction(result)
         row = store.list_recent()[0]
         self.assertEqual(row["intent_band"], "High Risk")
+        self.assertEqual(row["recommended_mode"], "Pair Programming")
+
+    def test_scoring_version_and_drift_columns_round_trip(self):
+        import dataclasses
+
+        store = HistoryStore(":memory:")
+        self.addCleanup(store.close)
+        winner = make_scored_bid("a", utility=0.9)
+        result = dataclasses.replace(
+            make_auction("v2", bids=(winner,), winner=winner),
+            scoring_version="0.2.0",
+        )
+        store.record_auction(result)
+        store.record_outcome(
+            OutcomeReport(
+                auction_id="v2",
+                success=True,
+                reported_at="2026-06-10T00:00:00+00:00",
+                diff_score=8,
+                scope_drift=True,
+                gate_score=9,
+            )
+        )
+        record = store.get_auction("v2")
+        self.assertEqual(record["scoring_version"], "0.2.0")
+        self.assertEqual(record["recommended_mode"], "Pair Programming")
+        self.assertEqual(record["outcome"]["scope_drift"], 1)
+        self.assertEqual(record["outcome"]["gate_score"], 9)
+        stats = store.agent_stats("a", PARAMS)
+        self.assertEqual(stats.drifts, 1)
 
 
 if __name__ == "__main__":

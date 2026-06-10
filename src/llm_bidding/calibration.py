@@ -44,6 +44,20 @@ def calibration_offset(
     return max(-limit, min(limit, offset))
 
 
+def shrunk_cost_ratio(
+    ratios: Sequence[float], params: CalibrationParams
+) -> float:
+    """Mean actual/estimated cost ratio shrunk toward a neutral 1.0, clamped.
+
+    Cold start (no reported actual costs) returns exactly 1.0, leaving cost
+    estimates untouched.
+    """
+    value = (sum(ratios) + params.cost_ratio_prior_strength * 1.0) / (
+        len(ratios) + params.cost_ratio_prior_strength
+    )
+    return min(max(value, params.cost_ratio_min), params.cost_ratio_max)
+
+
 def brier_score(
     confidence_outcome_pairs: Sequence[tuple[float, bool]],
 ) -> float | None:

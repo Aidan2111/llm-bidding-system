@@ -3,6 +3,8 @@
 from .auction import run_auction
 from .config import BiddingConfig, ConfigError, load_config
 from .history import HistoryError, HistoryStore
+from .policy import PolicyParams
+from .scoring import ScoringCompatibilityError
 from .models import (
     AgentProfile,
     AgentStats,
@@ -26,8 +28,10 @@ __all__ = [
     "HistoryError",
     "HistoryStore",
     "OutcomeReport",
+    "PolicyParams",
     "ScoredBid",
+    "ScoringCompatibilityError",
     "load_config",
     "run_auction",
 ]
-__version__ = "0.1.0"
+__version__ = "0.2.0"
