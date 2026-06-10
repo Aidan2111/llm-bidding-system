@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llm-bidding-system"
+version = "0.1.0"
+description = "An auction router where LLM agents bid on work, scored by autonomy risk and historical performance."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Aidan Marshall" }]
+keywords = [
+  "ai-agents",
+  "agentic-sdlc",
+  "model-routing",
+  "auction",
+  "developer-tools"
+]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Topic :: Software Development :: Quality Assurance"
+]
+dependencies = [
+  "agent-autonomy-score @ git+https://github.com/aidan2111/agent-autonomy-score@5bc49198489778d45b05a65711e30b2e1287d12e",
+]
+
+[project.optional-dependencies]
+anthropic = ["anthropic>=0.40.0"]
+openai = ["openai>=1.68.0"]
+all = ["anthropic>=0.40.0", "openai>=1.68.0"]
+
+[project.scripts]
+llm-bid = "llm_bidding.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
