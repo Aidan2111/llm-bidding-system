@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from autonomy_score import score_intent
-
 from llm_bidding.config import load_config
+from llm_bidding.scoring import score_task_intent
 from llm_bidding.models import AuctionResult, Bid, ScoredBid
 
 CONFIG = load_config()
@@ -61,7 +60,7 @@ def make_auction(
         auction_id=auction_id,
         created_at=created_at,
         task_text=task_text,
-        intent=score_intent(task_text),
+        intent=score_task_intent(task_text),
         weights=CONFIG.weights.to_dict(),
         bids=bids,
         winner=winner,

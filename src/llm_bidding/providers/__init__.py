@@ -12,6 +12,7 @@ from .base import (
     BidProviderError,
     MissingApiKeyError,
     MissingDependencyError,
+    RetryableProviderError,
     build_user_payload,
 )
 from .mock import MockBidProvider
@@ -24,6 +25,7 @@ __all__ = [
     "MissingApiKeyError",
     "MissingDependencyError",
     "MockBidProvider",
+    "RetryableProviderError",
     "build_user_payload",
     "build_providers",
 ]

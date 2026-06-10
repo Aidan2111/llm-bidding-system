@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 from .models import AgentProfile
+from .policy import SELECTION_MODES, PolicyParams
 
 
 class ConfigError(ValueError):
@@ -49,6 +50,31 @@ DEFAULT_CALIBRATION: dict[str, object] = {
     "max_calibration_shift": 0.2,
     "min_calibration_samples": 3,
     "min_band_samples": 3,
+    "cost_ratio_prior_strength": 4.0,
+    "cost_ratio_min": 0.25,
+    "cost_ratio_max": 4.0,
+}
+
+DEFAULT_POLICY: dict[str, object] = {
+    "min_award_utility": 0.0,
+    "selection_mode": "utility",
+    "adequacy_min_quality": 0.0,
+    "high_risk_floor": {
+        "min_band_success_rate": None,
+        "min_calibrated_confidence": None,
+    },
+}
+
+DEFAULT_PROVIDERS: dict[str, object] = {
+    "timeout_seconds": 60.0,
+    "retries": 1,
+    "retry_backoff_seconds": 2.0,
+}
+
+DEFAULT_FAST_PATH: dict[str, object] = {
+    "skip_bids_for_low_risk": False,
+    "default_input_tokens": 2000,
+    "default_output_tokens": 800,
 }
 
 DEFAULT_HISTORY_DB = "~/.llm-bidding/history.db"
@@ -73,6 +99,23 @@ class CalibrationParams:
     max_calibration_shift: float
     min_calibration_samples: int
     min_band_samples: int
+    cost_ratio_prior_strength: float = 4.0
+    cost_ratio_min: float = 0.25
+    cost_ratio_max: float = 4.0
+
+
+@dataclass(frozen=True)
+class ProviderParams:
+    timeout_seconds: float
+    retries: int
+    retry_backoff_seconds: float
+
+
+@dataclass(frozen=True)
+class FastPathParams:
+    skip_bids_for_low_risk: bool
+    default_input_tokens: int
+    default_output_tokens: int
 
 
 @dataclass(frozen=True)
@@ -83,6 +126,9 @@ class BiddingConfig:
     quality_mix_history: float
     cost_ceiling_usd: float
     calibration: CalibrationParams
+    policy: PolicyParams
+    providers: ProviderParams
+    fast_path: FastPathParams
     history_db: str
     autonomy_score_config: str | None
 
@@ -115,6 +161,33 @@ def _require_positive(value: object, label: str) -> float:
 def _require_non_negative_int(value: object, label: str) -> int:
     if not isinstance(value, int) or isinstance(value, bool) or value < 0:
         raise ConfigError(f"{label} must be an integer >= 0.")
+    return value
+
+
+def _require_positive_int(value: object, label: str) -> int:
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ConfigError(f"{label} must be an integer >= 1.")
+    return value
+
+
+def _require_non_negative(value: object, label: str) -> float:
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise ConfigError(f"{label} must be a number.")
+    number = float(value)
+    if number < 0:
+        raise ConfigError(f"{label} must be >= 0.")
+    return number
+
+
+def _optional_unit_interval(value: object, label: str) -> float | None:
+    if value is None:
+        return None
+    return _require_unit_interval(value, label)
+
+
+def _require_bool(value: object, label: str) -> bool:
+    if not isinstance(value, bool):
+        raise ConfigError(f"{label} must be a boolean.")
     return value
 
 
@@ -172,6 +245,67 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
         min_band_samples=_require_non_negative_int(
             raw_calibration.get("min_band_samples"), "calibration.min_band_samples"
         ),
+        cost_ratio_prior_strength=_require_positive(
+            raw_calibration.get("cost_ratio_prior_strength"),
+            "calibration.cost_ratio_prior_strength",
+        ),
+        cost_ratio_min=_require_positive(
+            raw_calibration.get("cost_ratio_min"), "calibration.cost_ratio_min"
+        ),
+        cost_ratio_max=_require_positive(
+            raw_calibration.get("cost_ratio_max"), "calibration.cost_ratio_max"
+        ),
+    )
+    if calibration.cost_ratio_min > calibration.cost_ratio_max:
+        raise ConfigError("calibration.cost_ratio_min must be <= cost_ratio_max.")
+
+    raw_policy = {**DEFAULT_POLICY, **raw.get("policy", {})}
+    raw_floor = {**DEFAULT_POLICY["high_risk_floor"], **raw_policy.get("high_risk_floor", {})}
+    selection_mode = raw_policy.get("selection_mode")
+    if selection_mode not in SELECTION_MODES:
+        raise ConfigError(
+            "policy.selection_mode must be one of: " + ", ".join(SELECTION_MODES)
+        )
+    policy = PolicyParams(
+        min_award_utility=_require_unit_interval(
+            raw_policy.get("min_award_utility"), "policy.min_award_utility"
+        ),
+        selection_mode=selection_mode,
+        adequacy_min_quality=_require_unit_interval(
+            raw_policy.get("adequacy_min_quality"), "policy.adequacy_min_quality"
+        ),
+        high_risk_min_band_success_rate=_optional_unit_interval(
+            raw_floor.get("min_band_success_rate"),
+            "policy.high_risk_floor.min_band_success_rate",
+        ),
+        high_risk_min_calibrated_confidence=_optional_unit_interval(
+            raw_floor.get("min_calibrated_confidence"),
+            "policy.high_risk_floor.min_calibrated_confidence",
+        ),
+    )
+
+    raw_providers = {**DEFAULT_PROVIDERS, **raw.get("providers", {})}
+    providers = ProviderParams(
+        timeout_seconds=_require_positive(
+            raw_providers.get("timeout_seconds"), "providers.timeout_seconds"
+        ),
+        retries=_require_non_negative_int(raw_providers.get("retries"), "providers.retries"),
+        retry_backoff_seconds=_require_non_negative(
+            raw_providers.get("retry_backoff_seconds"), "providers.retry_backoff_seconds"
+        ),
+    )
+
+    raw_fast_path = {**DEFAULT_FAST_PATH, **raw.get("fast_path", {})}
+    fast_path = FastPathParams(
+        skip_bids_for_low_risk=_require_bool(
+            raw_fast_path.get("skip_bids_for_low_risk"), "fast_path.skip_bids_for_low_risk"
+        ),
+        default_input_tokens=_require_positive_int(
+            raw_fast_path.get("default_input_tokens"), "fast_path.default_input_tokens"
+        ),
+        default_output_tokens=_require_positive_int(
+            raw_fast_path.get("default_output_tokens"), "fast_path.default_output_tokens"
+        ),
     )
 
     history_db = raw.get("history_db", DEFAULT_HISTORY_DB)
@@ -189,6 +323,9 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
         quality_mix_history=mix_history,
         cost_ceiling_usd=cost_ceiling,
         calibration=calibration,
+        policy=policy,
+        providers=providers,
+        fast_path=fast_path,
         history_db=history_db,
         autonomy_score_config=autonomy_config,
     )

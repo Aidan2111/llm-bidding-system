@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass
 import json
 from typing import Mapping
 
-from autonomy_score import IntentScoreResult
+from .scoring import IntentScoreResult
 
 
 EFFORT_LEVELS = ("trivial", "moderate", "substantial")
@@ -135,6 +135,8 @@ class AgentStats:
     success_rate: float
     brier_score: float | None
     calibration_offset: float
+    cost_ratio: float = 1.0
+    drifts: int = 0
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)
@@ -154,6 +156,8 @@ class ScoredBid:
     risk_fit_score: float
     utility: float
     error: str | None = None
+    eligible: bool = True
+    ineligible_reason: str | None = None
 
     @property
     def is_valid(self) -> bool:
@@ -171,6 +175,8 @@ class ScoredBid:
             "risk_fit_score": self.risk_fit_score,
             "utility": self.utility,
             "error": self.error,
+            "eligible": self.eligible,
+            "ineligible_reason": self.ineligible_reason,
         }
 
 
@@ -184,6 +190,7 @@ class AuctionResult:
     bids: tuple[ScoredBid, ...]
     winner: ScoredBid | None
     summary: str
+    scoring_version: str = ""
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -195,6 +202,7 @@ class AuctionResult:
             "bids": [bid.to_dict() for bid in self.bids],
             "winner": self.winner.to_dict() if self.winner else None,
             "summary": self.summary,
+            "scoring_version": self.scoring_version,
         }
 
     def to_json(self) -> str:
@@ -209,6 +217,8 @@ class OutcomeReport:
     notes: str = ""
     diff_score: int | None = None
     actual_cost_usd: float | None = None
+    scope_drift: bool | None = None
+    gate_score: int | None = None
 
     def to_dict(self) -> dict[str, object]:
         return asdict(self)

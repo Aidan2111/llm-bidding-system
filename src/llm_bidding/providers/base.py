@@ -23,9 +23,40 @@ class MissingDependencyError(BidProviderError):
     """Raised when an optional provider SDK is not installed."""
 
 
+class RetryableProviderError(BidProviderError):
+    """A transient provider failure (rate limit, 5xx, connection drop) safe to retry."""
+
+
 class BidProvider(Protocol):
     def request_bid(self, agent: AgentProfile, request: BidRequest) -> Bid:
         """Ask the model behind ``agent`` for a structured self-assessment."""
+
+
+# SDK exception class names that indicate a transient failure, shared by the
+# Anthropic and OpenAI SDKs (both expose status_code on API status errors).
+_TRANSIENT_EXCEPTION_NAMES = frozenset(
+    {
+        "APIConnectionError",
+        "APITimeoutError",
+        "RateLimitError",
+        "InternalServerError",
+        "OverloadedError",
+    }
+)
+
+
+def classify_provider_exception(exc: Exception, label: str) -> BidProviderError:
+    """Map an SDK exception to a retryable or permanent provider error."""
+    status = getattr(exc, "status_code", None)
+    transient = (
+        status == 429
+        or (isinstance(status, int) and status >= 500)
+        or type(exc).__name__ in _TRANSIENT_EXCEPTION_NAMES
+    )
+    message = f"{label} bid request failed: {exc}"
+    if transient:
+        return RetryableProviderError(message)
+    return BidProviderError(message)
 
 
 # Note: strict structured-output schemas do not support numeric minimum/maximum

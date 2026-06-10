@@ -39,7 +39,9 @@ def compute_scored_bid(
         + config.quality_mix_history * stats.success_rate
     )
 
-    cost = estimate_cost_usd(bid, agent)
+    # cost_ratio corrects for the agent's historical estimate bias
+    # (actual / estimated over reported outcomes); neutral 1.0 cold start.
+    cost = estimate_cost_usd(bid, agent) * stats.cost_ratio
     price = 1.0 - min(cost / config.cost_ceiling_usd, 1.0)
 
     if band_stats.outcomes_reported >= config.calibration.min_band_samples:

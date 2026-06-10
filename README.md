@@ -97,9 +97,16 @@ llm-bid report --auction-id 9911aa22bb33 --failure --notes "rolled back"
 llm-bid stats
 llm-bid stats --agent claude-opus --band "High Risk"
 llm-bid agents list
+
+# 4. Operate the history database
+llm-bid show --auction-id 3f2c61a09b7e     # full stored auction + outcome
+llm-bid history --limit 20                  # recent auctions at a glance
+llm-bid export --output history.jsonl      # everything as JSONL
+llm-bid prune --keep-days 90               # delete old auctions
 ```
 
-Exit codes: `0` winner selected, `2` no valid bids, `1` error.
+Exit codes: `0` winner selected, `2` no winner (no valid bids, or the policy
+abstained), `1` error.
 
 ## How the winner is picked
 
@@ -131,6 +138,39 @@ calibration constants live in [`llm-bidding.config.json`](llm-bidding.config.jso
 (pass yours with `--config`). Prices in the default config are examples — keep
 them in sync with your providers' current pricing.
 
+### Cost calibration
+
+Models are unreliable estimators of their own token usage, so reported actual
+costs feed back into pricing: each agent's actual/estimated cost ratio (mean
+over reported outcomes, shrunk toward a neutral 1.0 and clamped to
+`[0.25, 4.0]`) multiplies its future cost estimates before the price score.
+An agent that habitually estimates 3x under its real cost stops winning on
+price. Cold start is exactly 1.0 — estimates pass through untouched until you
+report `--actual-cost` values.
+
+### Decision policy (optional, off by default)
+
+On top of utility scoring, the `policy` config section adds award rules:
+
+- **High Risk floor** — on High Risk tasks, an agent must clear
+  `min_band_success_rate` (its proven track record in that band) *or*
+  `min_calibrated_confidence` to be eligible to win. Ineligible bids stay in
+  the output, marked `INELIGIBLE` with the failed checks.
+- **Abstain** — if the best eligible utility is below `min_award_utility`,
+  no winner is declared (exit 2 with the reason). Useful when "send it to a
+  human" beats "award it to a mediocre bid".
+- **`selection_mode: "cheapest_adequate"`** — instead of argmax utility, pick
+  the *cheapest* eligible bid whose quality clears `adequacy_min_quality`.
+  This is the "don't buy the flagship model by default" mode: quality is a
+  bar to clear, not a score to maximize.
+
+### Supervision recommendation
+
+Every auction also surfaces agent-autonomy-score's recommended supervision
+mode for the task (`Unsupervised` / `Guided Autonomy` / `Pair Programming`),
+so the router tells you not just *who* should do the work but *how closely
+to watch them*.
+
 ### Can an agent game it?
 
 An agent that always bids confidence 1.0 wins early (history starts neutral),
@@ -160,18 +200,50 @@ with HistoryStore(":memory:") as store:
 implementing `request_bid(agent, request) -> Bid` works as a provider, so the
 whole system is testable offline.
 
+## Robustness layers
+
+- **Scoring integration is firewalled.** `llm_bidding/scoring.py` is the only
+  module that imports `autonomy_score` — every band name, signal name, and
+  scoring call goes through it. On first use it runs a compatibility probe
+  against the installed dependency (API surface + band/mode vocabulary) and
+  raises a loud `ScoringCompatibilityError` if the pinned dep has drifted,
+  instead of silently mis-bucketing history. Each auction records the scoring
+  version it was scored under, so history stays auditable across dependency
+  bumps. A custom `autonomy_score_config` must come from a write-protected
+  source (its terms drive risk banding); a warning is emitted if the file is
+  group/world-writable.
+- **Bids run in parallel** with a shared per-wave timeout
+  (`providers.timeout_seconds`); a hung provider becomes a recorded timeout
+  failure, never a hung auction. Transient errors (429/5xx/connection drops)
+  are retried with backoff (`providers.retries`); auth, dependency, and
+  validation errors fail immediately.
+- **Statistical fast path** (`fast_path.skip_bids_for_low_risk`): Low Risk
+  tasks can skip LLM bid calls entirely — bids are synthesized from each
+  agent's historical success rate, making routine tasks free to route.
+- **Scope drift detection**: when a reported diff scores ≥3 points above the
+  original intent (or escalates a risk band), the outcome is flagged
+  `SCOPE DRIFT` and counted in `stats`. It is informational — penalizing
+  drift stays a human judgment via `--failure` — because drift is sometimes
+  legitimate discovered complexity.
+- **Schema migrations**: the SQLite store versions its schema and upgrades
+  v1 databases in place; old rows keep working (new columns read as NULL).
+  WAL mode + busy timeout handle concurrent CLI invocations.
+
 ## History schema
 
 A single SQLite file (default `~/.llm-bidding/history.db`, overridable via
-`--db`, `LLM_BIDDING_DB`, or the config):
+`--db`, `LLM_BIDDING_DB`, or the config). Schema v2:
 
 - `auctions` — id, timestamp, task text, intent score/band, **signal names as
   JSON** (so future risk-fit can move from band-level to signal-level without a
-  migration), utility weights used, winner.
+  migration), utility weights used, winner, scoring version, recommended
+  supervision mode.
 - `bids` — per-agent confidence, approach, cost estimate, utility component
-  breakdown, won flag, or the provider error if the bid failed.
+  breakdown, won flag, eligibility (+ reason), or the provider error if the
+  bid failed.
 - `outcomes` — one per auction: success/failure, notes, optional
-  `score_change()` diff score, optional actual cost.
+  `score_change()` diff score, gate score and scope-drift flag, optional
+  actual cost.
 
 ## Development
 
