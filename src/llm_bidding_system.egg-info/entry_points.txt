@@ -1,0 +1,2 @@
+[console_scripts]
+llm-bid = llm_bidding.cli:main

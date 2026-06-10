@@ -1,3 +1,28 @@
+Metadata-Version: 2.4
+Name: llm-bidding-system
+Version: 0.1.0
+Summary: An auction router where LLM agents bid on work, scored by autonomy risk and historical performance.
+Author: Aidan Marshall
+License-Expression: MIT
+Keywords: ai-agents,agentic-sdlc,model-routing,auction,developer-tools
+Classifier: Development Status :: 3 - Alpha
+Classifier: Intended Audience :: Developers
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Classifier: Topic :: Software Development :: Quality Assurance
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: agent-autonomy-score @ git+https://github.com/aidan2111/agent-autonomy-score@5bc49198489778d45b05a65711e30b2e1287d12e
+Provides-Extra: anthropic
+Requires-Dist: anthropic>=0.40.0; extra == "anthropic"
+Provides-Extra: openai
+Requires-Dist: openai>=1.68.0; extra == "openai"
+Provides-Extra: all
+Requires-Dist: anthropic>=0.40.0; extra == "all"
+Requires-Dist: openai>=1.68.0; extra == "all"
+Dynamic: license-file
+
 # llm-bidding-system
 
 An auction router for LLM work. Multiple LLM agents (e.g. Claude Opus, Claude
