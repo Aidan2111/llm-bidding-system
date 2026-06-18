@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 from typing import Mapping
 
+from .actor import build_patch_prompt, read_context_files, request_patch_proposal
 from .auction import run_auction
 from .config import BiddingConfig, ConfigError, load_config
 from .history import HistoryError, HistoryStore
@@ -91,6 +92,33 @@ def _build_parser() -> argparse.ArgumentParser:
 
     prune = subparsers.add_parser("prune", help="Delete auctions older than N days.")
     prune.add_argument("--keep-days", type=int, required=True)
+
+    propose = subparsers.add_parser(
+        "propose",
+        help="Ask a supervised coding actor to propose a patch for review.",
+    )
+    task_group = propose.add_mutually_exclusive_group(required=True)
+    task_group.add_argument("--task", help="Path to a task text file ('-' for stdin).")
+    task_group.add_argument("--task-text", help="Task text inline.")
+    propose.add_argument("--agent", required=True, help="Configured actor agent name.")
+    propose.add_argument(
+        "--context",
+        action="append",
+        default=[],
+        help="Repository file to include as explicit actor context. Repeatable.",
+    )
+    propose.add_argument("--auction-summary", help="Optional auction summary to include.")
+    propose.add_argument(
+        "--supervisor",
+        default="Codex",
+        help="Name of the reviewer/supervisor that will apply and test the patch.",
+    )
+    propose.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print the actor prompt without calling the live model.",
+    )
+    propose.add_argument("--output", help="Write the prompt/proposal to a file.")
 
     return parser
 
@@ -217,6 +245,9 @@ def run(
     db_path = _resolve_db_path(args, config, active_env)
 
     try:
+        if args.command == "propose":
+            return _cmd_propose(args, config, active_env)
+
         with HistoryStore(db_path) as store:
             if args.command == "bid":
                 return _cmd_bid(args, config, store, providers, active_env)
@@ -285,6 +316,43 @@ def _cmd_bid(
     else:
         print(_format_auction_text(result))
     return EXIT_OK if result.winner else EXIT_NO_WINNER
+
+
+def _cmd_propose(
+    args: argparse.Namespace,
+    config: BiddingConfig,
+    env: Mapping[str, str],
+) -> int:
+    if args.task_text is not None:
+        task_text = args.task_text
+        if not task_text.strip():
+            raise ValueError("--task-text is empty.")
+        if len(task_text.encode("utf-8")) > MAX_INTENT_BYTES:
+            raise ValueError(f"Task input exceeds the {MAX_INTENT_BYTES} byte limit.")
+    else:
+        task_text = _read_input(args.task, max_bytes=MAX_INTENT_BYTES, label="Task")
+
+    agent = config.agent(args.agent)
+    context_entries = read_context_files(args.context)
+    prompt = build_patch_prompt(
+        task_text=task_text,
+        context_entries=context_entries,
+        actor_name=agent.name,
+        supervisor_name=args.supervisor,
+        auction_summary=args.auction_summary,
+    )
+    output = prompt if args.dry_run else request_patch_proposal(
+        agent=agent, prompt=prompt, env=env
+    )
+    if args.output:
+        with open(args.output, "w", encoding="utf-8") as handle:
+            handle.write(output)
+            if not output.endswith("\n"):
+                handle.write("\n")
+        print(f"Wrote actor {'prompt' if args.dry_run else 'proposal'} to {args.output}.")
+    else:
+        print(output, end="" if output.endswith("\n") else "\n")
+    return EXIT_OK
 
 
 def _cmd_report(args: argparse.Namespace, store: HistoryStore) -> int:

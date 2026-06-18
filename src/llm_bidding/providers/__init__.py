@@ -55,6 +55,10 @@ def build_providers(
             from .openai_provider import OpenAIBidProvider
 
             providers[provider_type] = OpenAIBidProvider.from_env(env)
+        elif provider_type == "ollama":
+            from .ollama_provider import OllamaBidProvider
+
+            providers[provider_type] = OllamaBidProvider.from_env(env)
         else:  # pragma: no cover - config validation rejects unknown providers
             raise BidProviderError(f"Unknown provider type {provider_type!r}.")
     return providers

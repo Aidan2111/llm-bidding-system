@@ -21,6 +21,26 @@ class ConfigTests(unittest.TestCase):
         config = load_config(path)
         self.assertEqual({p.provider for p in config.agents}, {"anthropic", "openai"})
 
+    def test_qwen_openrouter_example_config_is_valid(self):
+        path = (
+            Path(__file__).resolve().parent.parent
+            / "examples"
+            / "qwen-openrouter.config.json"
+        )
+        config = load_config(path)
+        self.assertEqual(config.agent("qwen-coder").provider, "openai")
+        self.assertEqual(config.agent("qwen-coder").model_id, "qwen/qwen3-coder")
+
+    def test_ollama_spark_example_config_is_valid(self):
+        path = (
+            Path(__file__).resolve().parent.parent
+            / "examples"
+            / "ollama-spark.config.json"
+        )
+        config = load_config(path)
+        self.assertEqual(config.agent("spark").provider, "ollama")
+        self.assertEqual(config.agent("spark").model_id, "qwen3-coder:30b")
+
     def _write_config(self, data: dict) -> str:
         handle = tempfile.NamedTemporaryFile(
             "w", suffix=".json", delete=False, encoding="utf-8"

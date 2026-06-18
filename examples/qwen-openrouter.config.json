@@ -1,0 +1,47 @@
+{
+  "agents": [
+    {
+      "name": "qwen-coder",
+      "provider": "openai",
+      "model_id": "qwen/qwen3-coder",
+      "input_cost_per_mtok": 0.22,
+      "output_cost_per_mtok": 1.8
+    }
+  ],
+  "utility": {
+    "weights": { "quality": 0.5, "price": 0.2, "risk_fit": 0.3 },
+    "quality_mix": { "confidence": 0.6, "history": 0.4 },
+    "cost_ceiling_usd": 2.0
+  },
+  "calibration": {
+    "neutral_prior": 0.5,
+    "prior_strength": 4,
+    "max_calibration_shift": 0.2,
+    "min_calibration_samples": 3,
+    "min_band_samples": 3,
+    "cost_ratio_prior_strength": 4,
+    "cost_ratio_min": 0.25,
+    "cost_ratio_max": 4.0
+  },
+  "policy": {
+    "min_award_utility": 0.0,
+    "selection_mode": "utility",
+    "adequacy_min_quality": 0.0,
+    "high_risk_floor": {
+      "min_band_success_rate": null,
+      "min_calibrated_confidence": null
+    }
+  },
+  "providers": {
+    "timeout_seconds": 60.0,
+    "retries": 1,
+    "retry_backoff_seconds": 2.0
+  },
+  "fast_path": {
+    "skip_bids_for_low_risk": false,
+    "default_input_tokens": 2000,
+    "default_output_tokens": 800
+  },
+  "history_db": "~/.llm-bidding/qwen-openrouter-history.db",
+  "autonomy_score_config": null
+}

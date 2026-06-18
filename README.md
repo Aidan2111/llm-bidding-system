@@ -1,8 +1,9 @@
 # llm-bidding-system
 
 An auction router for LLM work. Multiple LLM agents (e.g. Claude Opus, Claude
-Sonnet, a GPT model) **bid** on a piece of work, and a configurable utility
-function picks the winner. Each bid combines three ingredients:
+Sonnet, a GPT model, or a local Ollama model) **bid** on a piece of work, and a
+configurable utility function picks the winner. Each bid combines three
+ingredients:
 
 1. **A live self-assessment** — each model is shown the task and asked for a
    structured bid: confidence (0–1), a brief approach, estimated tokens, and an
@@ -15,9 +16,11 @@ function picks the winner. Each bid combines three ingredients:
    stored in SQLite. Win rates, calibration-adjusted confidence, and per-band
    success rates feed back into future auctions.
 
-This repo is an **auction-only router**: it picks the winner and tells you why.
-Execution happens elsewhere; you report the outcome back, which closes the
-feedback loop.
+This repo is an **auction router with supervised execution helpers**: it picks
+the winning model and tells you why. It can also ask a configured coding actor
+to propose a patch, but it does not apply code by itself. A human or supervising
+agent reviews, applies, edits, tests, and then reports the outcome back, which
+closes the feedback loop.
 
 ```
               ┌────────────────────────────────────────────────┐
@@ -40,12 +43,17 @@ feedback loop.
 
 ## Install
 
+Requires Python 3.10 or newer.
+
 ```bash
 pip install -e .                 # core (pulls agent-autonomy-score from GitHub)
 pip install -e ".[anthropic]"    # + Anthropic SDK for live Claude bids
 pip install -e ".[openai]"       # + OpenAI SDK for live GPT bids
 pip install -e ".[all]"          # both
 ```
+
+Ollama/local models use Python's standard library HTTP client, so they do not
+need an extra Python package or an API key.
 
 For local development against a sibling checkout of the scoring repo:
 
@@ -107,6 +115,87 @@ llm-bid prune --keep-days 90               # delete old auctions
 
 Exit codes: `0` winner selected, `2` no winner (no valid bids, or the policy
 abstained), `1` error.
+
+## Qwen Coder as a supervised actor
+
+Use [`examples/qwen-openrouter.config.json`](examples/qwen-openrouter.config.json)
+to route a single `qwen-coder` actor through OpenRouter. The example uses the
+current OpenRouter model id `qwen/qwen3-coder`; prices are example routing
+inputs and should be checked against your provider before serious cost tracking.
+
+```bash
+export OPENROUTER_API_KEY=...
+
+# Qwen bids on the work and records the auction.
+llm-bid --config examples/qwen-openrouter.config.json bid \
+  --intent-text "Improve the OSS quickstart while keeping claims honest." \
+  --agents qwen-coder
+
+# Qwen proposes a patch. The supervisor still reviews and applies it.
+llm-bid --config examples/qwen-openrouter.config.json propose \
+  --agent qwen-coder \
+  --task-text "Improve the OSS quickstart while keeping claims honest." \
+  --context README.md \
+  --context pyproject.toml \
+  --output qwen-proposal.md
+```
+
+`propose` sends explicit context files plus the task to the actor and returns a
+concise rationale plus a unified diff. It never edits the checkout. Review the
+proposal, apply only acceptable changes, run tests, then record the result with
+`llm-bid report --auction-id ... --success|--failure`. To inspect the exact
+prompt without using an API key, add `--dry-run`.
+
+For a full manual smoke path, run:
+
+```bash
+examples/qwen_actor_workflow.sh "Improve the README quickstart while keeping claims honest."
+```
+
+## Local models with Ollama
+
+Use [`examples/ollama-spark.config.json`](examples/ollama-spark.config.json) to
+route a local Ollama coding model running on a DGX Spark or another local
+machine. The example agent is named `spark`, uses `provider: "ollama"`, points
+at `model_id: "qwen3-coder:30b"`, and uses zero token prices by default. The
+provider calls Ollama's `/api/chat` endpoint with structured JSON output for
+bids.
+
+```bash
+# Start Ollama separately, then make sure the model exists:
+ollama list
+ollama pull qwen3-coder:30b
+
+# If Ollama is not on localhost, point at the machine running it.
+# If unset, llm-bid also checks VS Code's local model registry.
+export OLLAMA_BASE_URL=http://spark.local:11434
+
+# Run a local live auction. No API key is required.
+llm-bid --config examples/ollama-spark.config.json bid \
+  --intent-text "Improve the OSS quickstart while keeping claims honest." \
+  --agents spark
+
+# Ask Spark to propose a patch for supervisor review.
+llm-bid --config examples/ollama-spark.config.json propose \
+  --agent spark \
+  --task-text "Improve the OSS quickstart while keeping claims honest." \
+  --context README.md \
+  --context pyproject.toml \
+  --output spark-proposal.md
+```
+
+`OLLAMA_BASE_URL` may include or omit the trailing `/api`; both forms are
+normalized. If it is unset, `llm-bid` first checks VS Code's local model
+registry at `~/Library/Application Support/Code/User/chatLanguageModels.json`
+for a registered Ollama URL, then falls back to `http://localhost:11434`.
+`VSCODE_CHAT_MODELS_PATH` can point at a different registry file.
+`OLLAMA_TIMEOUT_SECONDS` defaults to `120` for local generations.
+
+For a full local smoke path, run:
+
+```bash
+examples/ollama_spark_workflow.sh "Improve the README quickstart while keeping claims honest."
+```
 
 ## How the winner is picked
 
@@ -248,12 +337,28 @@ A single SQLite file (default `~/.llm-bidding/history.db`, overridable via
 ## Development
 
 ```bash
-PYTHONPATH=src:../agent-autonomy-score/src python -m unittest discover -s tests
+python -m venv .venv
+.venv/bin/python -m pip install -e ".[all]"
+PYTHONPATH=tests .venv/bin/python -m unittest discover -s tests -v
 ```
 
 The suite is fully offline: deterministic mock providers, in-memory SQLite, no
-API keys. `examples/live_smoke.sh` is an optional manual smoke test that does
-hit real APIs.
+API keys. `examples/live_smoke.sh`, `examples/qwen_actor_workflow.sh`, and
+`examples/ollama_spark_workflow.sh` are optional manual smoke tests that hit
+real APIs or local model servers.
+
+## Open source readiness notes
+
+- Keep API keys in the environment or a local untracked `.env`; never commit
+  provider credentials.
+- The default and Qwen configs contain example price tables. Provider pricing
+  changes, so verify prices before relying on cost metrics.
+- The project is intentionally not an autonomous code executor. It routes work,
+  requests supervised patch proposals, records outcomes, and learns from those
+  reported outcomes.
+- Local Ollama models can be excellent private actors, but their structured JSON
+  reliability depends on the specific model. If a local model returns malformed
+  JSON, the auction records that provider failure instead of selecting it.
 
 ## License
 

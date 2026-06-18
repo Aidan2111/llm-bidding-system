@@ -137,6 +137,27 @@ class CliTestCase(_CliBase):
         self.assertEqual(code, cli.EXIT_ERROR)
         self.assertIn("empty", err)
 
+    def test_propose_dry_run_outputs_actor_prompt(self):
+        context_file = Path(self.db_path).parent / "README.md"
+        context_file.write_text("# Project\n", encoding="utf-8")
+
+        code, out, _ = self._run(
+            "propose",
+            "--task-text",
+            "Improve the OSS quickstart.",
+            "--agent",
+            "gpt",
+            "--context",
+            str(context_file),
+            "--dry-run",
+        )
+
+        self.assertEqual(code, cli.EXIT_OK)
+        self.assertIn("gpt", out)
+        self.assertIn("Improve the OSS quickstart.", out)
+        self.assertIn("unified diff", out)
+        self.assertIn("# Project", out)
+
 
 RISKY_DIFF = (
     "--- a/db/migrations/001_auth.py\n"

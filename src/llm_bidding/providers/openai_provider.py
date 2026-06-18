@@ -18,6 +18,9 @@ from .base import (
 )
 
 
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+
+
 class OpenAIBidProvider:
     def __init__(self, *, api_key: str, base_url: str | None = None) -> None:
         if not api_key:
@@ -30,10 +33,11 @@ class OpenAIBidProvider:
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> "OpenAIBidProvider":
-        active_env = env if env is not None else os.environ
+        kwargs = openai_client_kwargs_from_env(env)
+        base_url = kwargs.get("base_url")
         return cls(
-            api_key=active_env.get("OPENAI_API_KEY", ""),
-            base_url=active_env.get("OPENAI_BASE_URL") or None,
+            api_key=str(kwargs["api_key"]),
+            base_url=base_url if isinstance(base_url, str) else None,
         )
 
     def request_bid(self, agent: AgentProfile, request: BidRequest) -> Bid:
@@ -87,3 +91,20 @@ def _import_openai():
             'Install it with: pip install -e ".[openai]"'
         ) from exc
     return OpenAI
+
+
+def openai_client_kwargs_from_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    active_env = env if env is not None else os.environ
+    api_key = active_env.get("OPENAI_API_KEY") or active_env.get("OPENROUTER_API_KEY", "")
+    base_url = active_env.get("OPENAI_BASE_URL") or None
+    if not base_url and active_env.get("OPENROUTER_API_KEY"):
+        base_url = OPENROUTER_BASE_URL
+    if not api_key:
+        raise MissingApiKeyError(
+            "OPENAI_API_KEY or OPENROUTER_API_KEY is required to call "
+            "OpenAI-compatible models. Set one in your environment or run with --dry-run."
+        )
+    kwargs = {"api_key": api_key}
+    if base_url:
+        kwargs["base_url"] = base_url
+    return kwargs

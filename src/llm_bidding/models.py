@@ -10,7 +10,7 @@ from .scoring import IntentScoreResult
 
 
 EFFORT_LEVELS = ("trivial", "moderate", "substantial")
-PROVIDER_TYPES = ("anthropic", "openai", "mock")
+PROVIDER_TYPES = ("anthropic", "openai", "ollama", "mock")
 
 
 class BidValidationError(ValueError):
