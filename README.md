@@ -50,6 +50,17 @@ The package implementation is split by workflow and dependency boundary under
 and `providers`. See [`docs/architecture.md`](docs/architecture.md) for the
 vertical slice layout and dependency rules.
 
+Project and OSS-readiness docs:
+
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
+- [Support](SUPPORT.md)
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Governance](GOVERNANCE.md)
+- [Changelog](CHANGELOG.md)
+- [Operations guide](docs/operations.md)
+- [OSS readiness checklist](docs/oss-readiness.md)
+
 ```bash
 pip install -e .                 # core (pulls agent-autonomy-score from GitHub)
 pip install -e ".[anthropic]"    # + Anthropic SDK for live Claude bids
@@ -343,8 +354,11 @@ A single SQLite file (default `~/.llm-bidding/history.db`, overridable via
 
 ```bash
 python -m venv .venv
-.venv/bin/python -m pip install -e ".[all]"
+.venv/bin/python -m pip install -e ".[all,dev]"
 PYTHONPATH=tests .venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python -m build
+.venv/bin/python -m twine check dist/*
+gitleaks dir . --no-banner --redact --exit-code 1
 ```
 
 The suite is fully offline: deterministic mock providers, in-memory SQLite, no

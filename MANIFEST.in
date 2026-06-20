@@ -1,0 +1,5 @@
+include CHANGELOG.md CODE_OF_CONDUCT.md CONTRIBUTING.md GOVERNANCE.md SECURITY.md SUPPORT.md
+include llm-bidding.config.json
+recursive-include docs *.md
+recursive-include examples *.json *.sh
+recursive-include .github *.md *.yml

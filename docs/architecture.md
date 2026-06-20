@@ -21,6 +21,28 @@ Top-level modules such as `llm_bidding.auction`, `llm_bidding.config`, and
 `llm_bidding.scoring` are compatibility wrappers. New code should import from
 the deeper package that owns the behavior.
 
+## Public Contracts
+
+The supported Python surface is exported from `llm_bidding`: `run_auction`,
+`load_config`, `HistoryStore`, the domain dataclasses, and the public error
+types. Provider implementations must satisfy the `BidProvider` protocol:
+`request_bid(agent, request) -> Bid`. Callers that need machine-readable output
+should use `llm-bid --format json` rather than parsing text tables.
+
+The supported CLI contract is:
+
+- `llm-bid bid` returns `0` when a winner is selected and `2` when policy or
+  provider results produce no winner.
+- `llm-bid report` records exactly one outcome for a winning auction.
+- `llm-bid stats`, `show`, `history`, `export`, and `agents list` are read-only
+  inspection commands except for `prune`, which deletes old history.
+- `llm-bid propose` asks an actor for a patch proposal only; it never edits the
+  checkout.
+
+The SQLite schema is internal to `HistoryStore`, but migrations are expected to
+preserve old rows. Larger systems should use `export` or the Python API instead
+of issuing their own SQL against private tables.
+
 ## Dependency Rules
 
 - `domain` does not import providers, config loading, SQLite, or
@@ -57,6 +79,19 @@ interfaces.cli
 
 Each workflow can be tested through the public CLI, the application service, or
 the smaller domain/infrastructure units underneath it.
+
+## Compatibility Policy
+
+While the package is in alpha, minor releases may add fields to JSON output,
+add SQLite columns, or add new config keys. They should not remove root
+compatibility imports, change exit-code meaning, or change existing JSON field
+meaning without a changelog entry and tests. Breaking public import, CLI, JSON,
+or database behavior requires a version bump and migration notes.
+
+Provider SDKs and model APIs are intentionally isolated. A provider change
+should be contained inside `providers` unless it requires a new domain concept.
+Changes to `agent-autonomy-score` must pass the compatibility canary before an
+auction is allowed to run.
 
 ## Well-Architected Mapping
 

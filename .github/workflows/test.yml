@@ -2,6 +2,9 @@ name: tests
 
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -17,7 +20,12 @@ jobs:
       - run: python -m pip install --upgrade pip
       # Same pin as pyproject.toml; installed explicitly so -e can use --no-deps.
       - run: pip install "agent-autonomy-score @ git+https://github.com/aidan2111/agent-autonomy-score@5bc49198489778d45b05a65711e30b2e1287d12e"
+      - run: pip install build twine
       - run: pip install -e . --no-deps
       # Drift canary: fails loudly if the pinned scoring dep no longer matches.
       - run: python -c "import llm_bidding.scoring as s; s.ensure_compatible()"
       - run: python -m unittest discover -s tests -v
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python -m pip install --force-reinstall --no-deps dist/*.whl
+      - run: llm-bid --help

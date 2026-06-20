@@ -22,8 +22,12 @@ keywords = [
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
   "Topic :: Software Development :: Quality Assurance"
 ]
 dependencies = [
@@ -34,9 +38,24 @@ dependencies = [
 anthropic = ["anthropic>=0.40.0"]
 openai = ["openai>=1.68.0"]
 all = ["anthropic>=0.40.0", "openai>=1.68.0"]
+dev = [
+  "build>=1.2.2",
+  "pip-audit>=2.7.3",
+  "twine>=5.1.1"
+]
+
+[project.urls]
+Homepage = "https://github.com/Aidan2111/llm-bidding-system"
+Repository = "https://github.com/Aidan2111/llm-bidding-system"
+Issues = "https://github.com/Aidan2111/llm-bidding-system/issues"
+Documentation = "https://github.com/Aidan2111/llm-bidding-system#readme"
+Changelog = "https://github.com/Aidan2111/llm-bidding-system/blob/main/CHANGELOG.md"
 
 [project.scripts]
 llm-bid = "llm_bidding.cli:main"
+
+[tool.setuptools.package-data]
+"llm_bidding" = ["py.typed"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
