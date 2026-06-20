@@ -6,7 +6,7 @@ import json
 import os
 from typing import Mapping
 
-from ..models import AgentProfile, Bid, BidRequest, BidValidationError
+from ..domain.models import AgentProfile, Bid, BidRequest, BidValidationError
 from .base import (
     BID_SCHEMA,
     SYSTEM_PROMPT,

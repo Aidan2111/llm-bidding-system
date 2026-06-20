@@ -1,11 +1,7 @@
 """LLM work auction: agents bid on tasks scored by agent-autonomy-score."""
 
-from .auction import run_auction
-from .config import BiddingConfig, ConfigError, load_config
-from .history import HistoryError, HistoryStore
-from .policy import PolicyParams
-from .scoring import ScoringCompatibilityError
-from .models import (
+from .application.auctioning import run_auction
+from .domain.models import (
     AgentProfile,
     AgentStats,
     AuctionResult,
@@ -15,6 +11,10 @@ from .models import (
     OutcomeReport,
     ScoredBid,
 )
+from .domain.policy import PolicyParams
+from .infrastructure.autonomy_scoring import ScoringCompatibilityError
+from .infrastructure.configuration import BiddingConfig, ConfigError, load_config
+from .infrastructure.history_store import HistoryError, HistoryStore
 
 __all__ = [
     "AgentProfile",

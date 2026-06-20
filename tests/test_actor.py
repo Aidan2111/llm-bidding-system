@@ -50,7 +50,10 @@ class ActorPromptTests(unittest.TestCase):
             output_cost_per_mtok=0.0,
         )
 
-        with patch("llm_bidding.actor.request_ollama_chat", return_value="diff") as chat:
+        with patch(
+            "llm_bidding.application.patch_proposals.request_ollama_chat",
+            return_value="diff",
+        ) as chat:
             result = request_patch_proposal(
                 agent=agent,
                 prompt="Propose a README patch.",

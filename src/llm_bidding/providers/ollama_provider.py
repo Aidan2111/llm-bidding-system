@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Callable, Mapping, Sequence
 from urllib import error, request
 
-from ..models import AgentProfile, Bid, BidRequest, BidValidationError
+from ..domain.models import AgentProfile, Bid, BidRequest, BidValidationError
 from .base import (
     BID_SCHEMA,
     SYSTEM_PROMPT,

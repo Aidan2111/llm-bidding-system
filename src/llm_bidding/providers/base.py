@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Protocol
 
-from ..models import AgentProfile, Bid, BidRequest
+from ..domain.models import AgentProfile, Bid, BidRequest
 
 
 MAX_TASK_CHARS = 60000

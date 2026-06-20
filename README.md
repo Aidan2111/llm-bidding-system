@@ -45,6 +45,11 @@ closes the feedback loop.
 
 Requires Python 3.10 or newer.
 
+The package implementation is split by workflow and dependency boundary under
+`src/llm_bidding/`: `application`, `domain`, `infrastructure`, `interfaces`,
+and `providers`. See [`docs/architecture.md`](docs/architecture.md) for the
+vertical slice layout and dependency rules.
+
 ```bash
 pip install -e .                 # core (pulls agent-autonomy-score from GitHub)
 pip install -e ".[anthropic]"    # + Anthropic SDK for live Claude bids

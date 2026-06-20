@@ -5,8 +5,8 @@ from __future__ import annotations
 import hashlib
 from typing import Iterable, Mapping
 
-from ..models import AgentProfile, Bid, BidRequest
-from ..scoring import EFFORT_BY_BAND
+from ..domain.models import AgentProfile, Bid, BidRequest
+from ..infrastructure.autonomy_scoring import EFFORT_BY_BAND
 from .base import BidProviderError, RetryableProviderError
 
 

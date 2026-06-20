@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from ..config import BiddingConfig
+from ..infrastructure.configuration import BiddingConfig
 from .base import (
     BID_SCHEMA,
     SYSTEM_PROMPT,

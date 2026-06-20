@@ -106,15 +106,16 @@ class ScopeDriftTests(unittest.TestCase):
 
 
 class ImportGuardTests(unittest.TestCase):
-    """Only scoring.py may import autonomy_score."""
+    """Only the infrastructure adapter may import autonomy_score."""
 
     def test_no_other_module_imports_autonomy_score(self):
         package_dir = Path(__file__).resolve().parent.parent / "src" / "llm_bidding"
         pattern = re.compile(r"^\s*(from|import)\s+autonomy_score", re.MULTILINE)
+        allowed = {"infrastructure/autonomy_scoring.py"}
         offenders = [
             str(path.relative_to(package_dir))
             for path in package_dir.rglob("*.py")
-            if path.name != "scoring.py"
+            if str(path.relative_to(package_dir)) not in allowed
             and pattern.search(path.read_text(encoding="utf-8"))
         ]
         self.assertEqual(offenders, [])
