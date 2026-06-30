@@ -51,6 +51,30 @@ class HistoryCostRatioTests(unittest.TestCase):
         stats = store.agent_stats("a", PARAMS)
         self.assertEqual(stats.cost_ratio, 1.0)
 
+    def test_ratio_is_measured_against_raw_not_adjusted_estimate(self):
+        """Regression: an accurate estimate must yield ratio sample 1.0 even
+        when the stored (price-facing) estimate was already ratio-adjusted."""
+        store = HistoryStore(":memory:")
+        self.addCleanup(store.close)
+        # Simulate a later round: raw estimate 0.10, but a prior 2x ratio means
+        # the stored/price-facing estimate is 0.20. The model nailed it: actual
+        # equals the raw estimate, so the new ratio sample must be 1.0 (not 0.5).
+        winner = dataclasses.replace(
+            make_scored_bid("a", utility=0.9, cost=0.20),
+            raw_estimated_cost_usd=0.10,
+        )
+        store.record_auction(make_auction("c3", bids=(winner,), winner=winner))
+        store.record_outcome(
+            OutcomeReport(
+                auction_id="c3",
+                success=True,
+                reported_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                actual_cost_usd=0.10,
+            )
+        )
+        stats = store.agent_stats("a", PARAMS)
+        self.assertEqual(stats.cost_ratio, 1.0)
+
 
 class UtilityCostRatioTests(unittest.TestCase):
     AGENT = AgentProfile(

@@ -59,8 +59,9 @@ def compute_scored_bid(
     )
 
     # cost_ratio corrects for the agent's historical estimate bias
-    # (actual / estimated over reported outcomes); neutral 1.0 cold start.
-    cost = estimate_cost_usd(bid, agent) * stats.cost_ratio
+    # (actual / raw estimate over reported outcomes); neutral 1.0 cold start.
+    raw_cost = estimate_cost_usd(bid, agent)
+    cost = raw_cost * stats.cost_ratio
     price = 1.0 - min(cost / config.cost_ceiling_usd, 1.0)
 
     if band_stats.outcomes_reported >= config.calibration.min_band_samples:
@@ -83,6 +84,7 @@ def compute_scored_bid(
         price_score=price,
         risk_fit_score=risk_fit,
         utility=utility,
+        raw_estimated_cost_usd=raw_cost,
     )
 
 

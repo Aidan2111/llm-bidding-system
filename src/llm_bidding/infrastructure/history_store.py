@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
 );
 """
 
-_LATEST_SCHEMA_VERSION = 2
+_LATEST_SCHEMA_VERSION = 3
 
 # Each entry upgrades from version N-1 to N. New columns must be nullable so
 # rows recorded under older schemas keep working (NULL means "pre-upgrade").
@@ -74,6 +74,10 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "ALTER TABLE outcomes ADD COLUMN scope_drift INTEGER",
         "ALTER TABLE outcomes ADD COLUMN gate_score INTEGER",
     ),
+    # raw_estimated_cost_usd is the model's pre-calibration estimate; the cost
+    # ratio must be measured against it, not the ratio-adjusted estimate that
+    # feeds the price score (otherwise calibration is self-referential).
+    3: ("ALTER TABLE bids ADD COLUMN raw_estimated_cost_usd REAL",),
 }
 
 
@@ -152,9 +156,9 @@ class HistoryStore:
                 bid = scored.bid
                 self._connection.execute(
                     "INSERT INTO bids (auction_id, agent_name, model_id, confidence,"
-                    " approach, estimated_cost_usd, quality, price, risk_fit, utility,"
-                    " won, error, eligible, ineligible_reason)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " approach, estimated_cost_usd, raw_estimated_cost_usd, quality,"
+                    " price, risk_fit, utility, won, error, eligible, ineligible_reason)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         result.auction_id,
                         scored.agent_name,
@@ -162,6 +166,7 @@ class HistoryStore:
                         bid.confidence if bid else None,
                         bid.approach if bid else None,
                         scored.estimated_cost_usd,
+                        scored.raw_estimated_cost_usd,
                         scored.quality_score,
                         scored.price_score,
                         scored.risk_fit_score,
@@ -227,7 +232,8 @@ class HistoryStore:
 
         outcome_rows = self._connection.execute(
             "SELECT bids.confidence AS confidence, outcomes.success AS success,"
-            " bids.estimated_cost_usd AS estimated_cost,"
+            " COALESCE(bids.raw_estimated_cost_usd, bids.estimated_cost_usd)"
+            " AS estimated_cost,"
             " outcomes.actual_cost_usd AS actual_cost,"
             " outcomes.scope_drift AS scope_drift"
             " FROM bids"
