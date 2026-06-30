@@ -27,9 +27,19 @@ system behaves as plain argmax-utility.
 - **Abstain** — if the chosen bid's utility is below `min_award_utility`,
   return no winner with a reason. The CLI maps no-winner to exit code 2.
 
+## Per-band weights
+
+Utility weights are resolved per risk band via `config.weights_for(band)`
+(`utility.band_weights` in config; bands fall back to the global `weights`).
+This lets price dominate cheap low-risk work while quality/risk-fit dominate
+high-risk work, without changing the selection algorithm. The resolved weights
+are stored on the `AuctionResult`.
+
 ## Gotchas
 
 - `cheapest_adequate` can abstain rather than silently falling back to utility
   mode — operators must expect exit 2 when nothing meets the bar.
 - Eligibility uses `risk_fit_score` (the shrunk band success rate) as the floor
   input, not raw confidence.
+- Per-band weights still must each sum to 1.0; unknown band names are rejected
+  at config load.

@@ -69,7 +69,10 @@ def compute_scored_bid(
     else:
         risk_fit = stats.success_rate
 
-    weights = config.weights
+    # Per-band weight overrides when the config supports them; the band comes
+    # from the band-scoped stats. Falls back to the global weights otherwise.
+    weights_for = getattr(config, "weights_for", None)
+    weights = weights_for(band_stats.band) if weights_for else config.weights
     utility = (
         weights.quality * quality + weights.price * price + weights.risk_fit * risk_fit
     )

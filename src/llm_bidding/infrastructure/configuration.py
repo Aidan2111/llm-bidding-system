@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 
 from ..domain.models import AgentProfile
 from ..domain.policy import SELECTION_MODES, PolicyParams
+from .autonomy_scoring import BANDS
 
 
 class ConfigError(ValueError):
@@ -131,6 +132,9 @@ class BiddingConfig:
     fast_path: FastPathParams
     history_db: str
     autonomy_score_config: str | None
+    # Optional per-risk-band weight overrides. Bands absent here fall back to
+    # the global `weights`, so the default (empty) reproduces prior behavior.
+    band_weights: dict[str, UtilityWeights] = field(default_factory=dict)
 
     def agent(self, name: str) -> AgentProfile:
         for profile in self.agents:
@@ -138,6 +142,24 @@ class BiddingConfig:
                 return profile
         raise ConfigError(f"Unknown agent {name!r}. Configured agents: "
                           + ", ".join(p.name for p in self.agents))
+
+    def weights_for(self, band: str | None) -> UtilityWeights:
+        """Resolve the utility weights for a risk band, falling back to global."""
+        if band is None:
+            return self.weights
+        return self.band_weights.get(band, self.weights)
+
+
+def _build_weights(raw_weights: dict, label: str) -> "UtilityWeights":
+    weights = UtilityWeights(
+        quality=_require_unit_interval(raw_weights.get("quality"), f"{label}.quality"),
+        price=_require_unit_interval(raw_weights.get("price"), f"{label}.price"),
+        risk_fit=_require_unit_interval(raw_weights.get("risk_fit"), f"{label}.risk_fit"),
+    )
+    total = weights.quality + weights.price + weights.risk_fit
+    if abs(total - 1.0) > _WEIGHT_EPSILON:
+        raise ConfigError(f"{label} must sum to 1.0 (got {total}).")
+    return weights
 
 
 def _require_unit_interval(value: object, label: str) -> float:
@@ -205,14 +227,22 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
 
     utility = {**DEFAULT_UTILITY, **raw.get("utility", {})}
     raw_weights = {**DEFAULT_UTILITY["weights"], **utility.get("weights", {})}
-    weights = UtilityWeights(
-        quality=_require_unit_interval(raw_weights.get("quality"), "utility.weights.quality"),
-        price=_require_unit_interval(raw_weights.get("price"), "utility.weights.price"),
-        risk_fit=_require_unit_interval(raw_weights.get("risk_fit"), "utility.weights.risk_fit"),
-    )
-    total = weights.quality + weights.price + weights.risk_fit
-    if abs(total - 1.0) > _WEIGHT_EPSILON:
-        raise ConfigError(f"utility.weights must sum to 1.0 (got {total}).")
+    weights = _build_weights(raw_weights, "utility.weights")
+
+    band_weights: dict[str, UtilityWeights] = {}
+    raw_band_weights = utility.get("band_weights", {})
+    if not isinstance(raw_band_weights, dict):
+        raise ConfigError("utility.band_weights must be an object keyed by risk band.")
+    for band, spec in raw_band_weights.items():
+        if band not in BANDS:
+            raise ConfigError(
+                f"utility.band_weights has unknown band {band!r}; expected one of "
+                + ", ".join(BANDS)
+            )
+        if not isinstance(spec, dict):
+            raise ConfigError(f"utility.band_weights[{band!r}] must be an object.")
+        merged = {**DEFAULT_UTILITY["weights"], **spec}
+        band_weights[band] = _build_weights(merged, f"utility.band_weights[{band!r}]")
 
     raw_mix = {**DEFAULT_UTILITY["quality_mix"], **utility.get("quality_mix", {})}
     mix_confidence = _require_unit_interval(
@@ -328,6 +358,7 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
         fast_path=fast_path,
         history_db=history_db,
         autonomy_score_config=autonomy_config,
+        band_weights=band_weights,
     )
 
 

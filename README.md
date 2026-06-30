@@ -243,6 +243,29 @@ calibration constants live in [`llm-bidding.config.json`](llm-bidding.config.jso
 (pass yours with `--config`). Prices in the default config are examples — keep
 them in sync with your providers' current pricing.
 
+### Per-band weights (task-aware routing)
+
+The same trade-off shouldn't govern a copy tweak and a destructive migration.
+`utility.band_weights` overrides the weights per risk band; any band you don't
+list falls back to the global `weights`:
+
+```json
+{
+  "utility": {
+    "weights": { "quality": 0.5, "price": 0.2, "risk_fit": 0.3 },
+    "band_weights": {
+      "Low Risk":  { "quality": 0.2, "price": 0.7, "risk_fit": 0.1 },
+      "High Risk": { "quality": 0.3, "price": 0.0, "risk_fit": 0.7 }
+    }
+  }
+}
+```
+
+Here cheap low-risk work is routed mostly on price, while high-risk work
+ignores price and leans on proven track record. Each band's weights must still
+sum to 1.0, and the band names must be the canonical risk bands. The applied
+weights are recorded on each auction.
+
 ### Cost calibration
 
 Models are unreliable estimators of their own token usage, so reported actual

@@ -221,7 +221,7 @@ def run_auction(
         created_at=(clock or _default_clock)(),
         task_text=task_text,
         intent=intent,
-        weights=config.weights.to_dict(),
+        weights=config.weights_for(intent.band).to_dict(),
         bids=tuple(valid + failures),
         winner=winner,
         summary=summary,
