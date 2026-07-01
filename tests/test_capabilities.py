@@ -62,6 +62,18 @@ class CapabilityDocTests(unittest.TestCase):
                 rel, agents_text, f"AGENTS.md does not reference {rel}"
             )
 
+    def test_agents_md_module_lines_match_doc_front_matter(self):
+        """The index must name each capability's canonical module, not a shim
+        (PR #2 review: index and docs drifted apart)."""
+        agents_text = AGENTS_FILE.read_text(encoding="utf-8")
+        for doc in self.docs:
+            fm = parse_front_matter(doc.read_text(encoding="utf-8"))
+            self.assertIn(
+                f"`{fm['module']}`",
+                agents_text,
+                f"AGENTS.md module line for {doc.name} does not match its front matter",
+            )
+
     def test_agents_md_only_links_real_capabilities(self):
         import re
 

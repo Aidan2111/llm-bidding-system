@@ -48,6 +48,26 @@ class BandWeightsConfigTests(unittest.TestCase):
         # Medium Risk wasn't overridden -> global weights.
         self.assertEqual(config.weights_for("Medium Risk"), config.weights)
 
+    def test_partial_override_inherits_configured_globals_not_defaults(self):
+        """Regression (PR #2 review): a band entry that omits keys must inherit
+        the user's configured global weights, not the built-in defaults."""
+        path = _write(
+            {
+                "utility": {
+                    # Custom globals, different from the built-in 0.5/0.2/0.3.
+                    "weights": {"quality": 0.6, "price": 0.1, "risk_fit": 0.3},
+                    # Only quality overridden; price/risk_fit must come from above.
+                    "band_weights": {"Low Risk": {"quality": 0.6}},
+                }
+            }
+        )
+        self.addCleanup(Path(path).unlink)
+        config = load_config(path)
+        self.assertEqual(
+            config.weights_for("Low Risk"),
+            UtilityWeights(quality=0.6, price=0.1, risk_fit=0.3),
+        )
+
     def test_band_weights_must_sum_to_one(self):
         path = _write(
             {"utility": {"band_weights": {"Low Risk": {"quality": 0.5, "price": 0.5, "risk_fit": 0.5}}}}

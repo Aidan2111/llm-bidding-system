@@ -264,7 +264,10 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
             )
         if not isinstance(spec, dict):
             raise ConfigError(f"utility.band_weights[{band!r}] must be an object.")
-        merged = {**DEFAULT_UTILITY["weights"], **spec}
+        # Partial overrides inherit from the *configured* global weights, not
+        # the built-in defaults — a band entry omitting a key must fall back to
+        # what the user actually set in utility.weights.
+        merged = {**raw_weights, **spec}
         band_weights[band] = _build_weights(merged, f"utility.band_weights[{band!r}]")
 
     raw_mix = {**DEFAULT_UTILITY["quality_mix"], **utility.get("quality_mix", {})}

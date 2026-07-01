@@ -47,12 +47,12 @@ Open the linked file for full detail; the lines under each are its front matter.
 
 ### [Scoring Integration](docs/capabilities/scoring-integration.md)
 - **summary:** Firewalled adapter over agent-autonomy-score; the only place the dependency is imported.
-- **module:** `src/llm_bidding/scoring.py`
+- **module:** `src/llm_bidding/infrastructure/autonomy_scoring.py`
 - **read_when:** changing how risk scores enter the system, bumping the agent-autonomy-score pin, or touching band/signal vocabulary
 
 ### [Auctioning](docs/capabilities/auctioning.md)
 - **summary:** Score a task, gather bids in parallel, apply policy, and pick a winner by utility.
-- **module:** `src/llm_bidding/auction.py`
+- **module:** `src/llm_bidding/application/auctioning.py`
 - **read_when:** changing the auction lifecycle, bid orchestration, timeouts/retries, or the fast path
 
 ### [Bidding Providers](docs/capabilities/bidding-providers.md)
@@ -62,17 +62,17 @@ Open the linked file for full detail; the lines under each are its front matter.
 
 ### [Decision Policy](docs/capabilities/decision-policy.md)
 - **summary:** Eligibility floors, abstain rules, and selection modes applied after utility scoring.
-- **module:** `src/llm_bidding/policy.py`
+- **module:** `src/llm_bidding/domain/policy.py`
 - **read_when:** changing how a winner is chosen, adding award rules, or adjusting abstain behavior
 
 ### [Calibration](docs/capabilities/calibration.md)
 - **summary:** Deterministic feedback that turns reported outcomes into success rates, confidence offsets, and cost ratios.
-- **module:** `src/llm_bidding/calibration.py`
+- **module:** `src/llm_bidding/domain/calibration.py`
 - **read_when:** changing how history adjusts future bids or the cost/quality math
 
 ### [History & Ops](docs/capabilities/history-and-ops.md)
 - **summary:** SQLite persistence with versioned migrations, plus the report/show/history/export/prune CLI surface.
-- **module:** `src/llm_bidding/history.py`
+- **module:** `src/llm_bidding/infrastructure/history_store.py`
 - **read_when:** changing the schema, adding a migration, or touching outcome reporting and ops commands
 
 ## Conventions
