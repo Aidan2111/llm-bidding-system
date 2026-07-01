@@ -78,6 +78,11 @@ DEFAULT_FAST_PATH: dict[str, object] = {
     "default_output_tokens": 800,
 }
 
+DEFAULT_EXPLORATION: dict[str, object] = {
+    "every_nth": 0,
+    "min_band_outcomes": 3,
+}
+
 DEFAULT_HISTORY_DB = "~/.llm-bidding/history.db"
 
 _WEIGHT_EPSILON = 1e-6
@@ -120,6 +125,23 @@ class FastPathParams:
 
 
 @dataclass(frozen=True)
+class ExplorationParams:
+    """Cold-start exploration: periodically route to under-proven agents.
+
+    Without exploration, price dominates while every agent's history is
+    neutral, so the cheapest model wins the early auctions and becomes the
+    only agent that ever accrues outcome data. When ``every_nth`` > 0, every
+    Nth recorded auction in a risk band restricts winner selection to
+    eligible agents with fewer than ``min_band_outcomes`` reported outcomes
+    in that band (if any exist), so the field gets proven out.
+    ``every_nth = 0`` disables exploration entirely (the default).
+    """
+
+    every_nth: int = 0
+    min_band_outcomes: int = 3
+
+
+@dataclass(frozen=True)
 class BiddingConfig:
     agents: tuple[AgentProfile, ...]
     weights: UtilityWeights
@@ -135,6 +157,7 @@ class BiddingConfig:
     # Optional per-risk-band weight overrides. Bands absent here fall back to
     # the global `weights`, so the default (empty) reproduces prior behavior.
     band_weights: dict[str, UtilityWeights] = field(default_factory=dict)
+    exploration: ExplorationParams = field(default_factory=ExplorationParams)
 
     def agent(self, name: str) -> AgentProfile:
         for profile in self.agents:
@@ -338,6 +361,16 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
         ),
     )
 
+    raw_exploration = {**DEFAULT_EXPLORATION, **raw.get("exploration", {})}
+    exploration = ExplorationParams(
+        every_nth=_require_non_negative_int(
+            raw_exploration.get("every_nth"), "exploration.every_nth"
+        ),
+        min_band_outcomes=_require_positive_int(
+            raw_exploration.get("min_band_outcomes"), "exploration.min_band_outcomes"
+        ),
+    )
+
     history_db = raw.get("history_db", DEFAULT_HISTORY_DB)
     if not isinstance(history_db, str) or not history_db.strip():
         raise ConfigError("'history_db' must be a non-empty string path.")
@@ -359,6 +392,7 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
         history_db=history_db,
         autonomy_score_config=autonomy_config,
         band_weights=band_weights,
+        exploration=exploration,
     )
 
 

@@ -33,6 +33,9 @@ auto-penalized.
 
 - `show --auction-id` — full stored auction, bids (incl. eligibility), outcome.
 - `history [--limit N]` — recent auctions.
+- `pending [--limit N]` — auctions that awarded a winner but never had an
+  outcome reported, oldest first. Unreported outcomes starve calibration; the
+  `stats` text output also flags each agent's `UNREPORTED` win count.
 - `export [--output f.jsonl]` — every row as JSONL (`BrokenPipeError`-safe).
 - `prune --keep-days N` — delete old auctions, cascading to bids/outcomes.
 
@@ -40,5 +43,6 @@ auto-penalized.
 
 - All `HistoryStore` access stays on the main thread (sqlite thread affinity);
   the auction pre-fetches stats before fanning out to worker threads.
-- `prune` relies on ISO-8601 UTC timestamps comparing lexicographically; mixing
-  naive/aware timestamps would break the cutoff.
+- `prune` parses each `created_at` (`datetime.fromisoformat`; naive values are
+  assumed UTC) rather than comparing strings; rows with unparseable timestamps
+  are kept, never deleted.

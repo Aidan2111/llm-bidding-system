@@ -336,6 +336,39 @@ class HistoryStore:
             for row in rows
         ]
 
+    def count_auctions(self, band: str | None = None) -> int:
+        """Number of recorded auctions, optionally scoped to one risk band."""
+        if band is None:
+            row = self._connection.execute("SELECT COUNT(*) AS n FROM auctions").fetchone()
+        else:
+            row = self._connection.execute(
+                "SELECT COUNT(*) AS n FROM auctions WHERE intent_band = ?", (band,)
+            ).fetchone()
+        return row["n"]
+
+    def list_unreported(self, limit: int = 20) -> list[dict[str, object]]:
+        """Auctions that awarded a winner but never had an outcome reported.
+
+        Oldest first — these are the debts that starve calibration.
+        """
+        rows = self._connection.execute(
+            "SELECT auctions.id, auctions.created_at, auctions.intent_band,"
+            " auctions.winner_agent"
+            " FROM auctions LEFT JOIN outcomes ON outcomes.auction_id = auctions.id"
+            " WHERE auctions.winner_agent IS NOT NULL AND outcomes.auction_id IS NULL"
+            " ORDER BY auctions.created_at ASC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [
+            {
+                "auction_id": row["id"],
+                "created_at": row["created_at"],
+                "intent_band": row["intent_band"],
+                "winner": row["winner_agent"],
+            }
+            for row in rows
+        ]
+
     def get_auction(self, auction_id: str) -> dict[str, object]:
         """Full stored record for one auction: row, bids, and any outcome."""
         auction = self._connection.execute(
@@ -385,16 +418,23 @@ class HistoryStore:
             if now
             else datetime.datetime.now(datetime.timezone.utc)
         )
-        cutoff = (reference - datetime.timedelta(days=keep_days)).isoformat(
-            timespec="seconds"
-        )
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=datetime.timezone.utc)
+        cutoff = reference - datetime.timedelta(days=keep_days)
         with self._connection:
-            ids = [
-                row["id"]
-                for row in self._connection.execute(
-                    "SELECT id FROM auctions WHERE created_at < ?", (cutoff,)
-                )
-            ]
+            # Parse timestamps rather than comparing strings: mixed offsets or
+            # naive values would make a lexicographic comparison mis-prune.
+            # Rows with unparseable timestamps are kept, never deleted.
+            ids = []
+            for row in self._connection.execute("SELECT id, created_at FROM auctions"):
+                try:
+                    created = datetime.datetime.fromisoformat(row["created_at"])
+                except (TypeError, ValueError):
+                    continue
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=datetime.timezone.utc)
+                if created < cutoff:
+                    ids.append(row["id"])
             if not ids:
                 return 0
             placeholders = ",".join("?" for _ in ids)

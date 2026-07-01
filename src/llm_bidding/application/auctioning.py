@@ -202,16 +202,44 @@ def run_auction(
     )
     failures = [item for item in scored if not item.is_valid]
     valid.sort(key=lambda item: (-item.utility, item.estimated_cost_usd, item.agent_name))
-    winner, abstain_reason = select_winner(valid, config.policy)
+
+    # Cold-start exploration: on every Nth recorded auction in this band,
+    # restrict selection to eligible agents that are still under-proven there,
+    # so the cheapest early winner doesn't become the only agent with history.
+    # Deterministic: keyed off the count of auctions already recorded.
+    winner = None
+    abstain_reason: str | None = None
+    exploration_round = False
+    exploration = config.exploration
+    if exploration.every_nth > 0:
+        band_count = store.count_auctions(band=intent.band)
+        if (band_count + 1) % exploration.every_nth == 0:
+            under_proven = [
+                item
+                for item in valid
+                if item.eligible
+                and all_stats[item.agent_name][1].outcomes_reported
+                < exploration.min_band_outcomes
+            ]
+            if under_proven:
+                candidate, _ = select_winner(under_proven, config.policy)
+                if candidate is not None:
+                    winner = candidate
+                    exploration_round = True
+    if not exploration_round:
+        winner, abstain_reason = select_winner(valid, config.policy)
 
     supervision = f"Recommended supervision: {intent.recommended_mode}."
+    exploration_note = (
+        " Exploration round: routed to an under-proven agent." if exploration_round else ""
+    )
     if winner is not None:
         summary = (
             f"{winner.agent_name} wins with utility {winner.utility:.3f}"
             f" (confidence {winner.bid.confidence:.2f}, calibrated"
             f" {winner.calibrated_confidence:.2f}, est. cost"
             f" ${winner.estimated_cost_usd:.4f}) on a {intent.band} task"
-            f" (intent score {intent.score}). {supervision}"
+            f" (intent score {intent.score}). {supervision}{exploration_note}"
         )
     else:
         summary = f"No winner: {abstain_reason}. {supervision}"
@@ -226,6 +254,7 @@ def run_auction(
         winner=winner,
         summary=summary,
         scoring_version=scoring_version(),
+        exploration_round=exploration_round,
     )
     if record:
         store.record_auction(result)

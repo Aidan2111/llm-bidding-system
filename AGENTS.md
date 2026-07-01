@@ -85,6 +85,24 @@ Open the linked file for full detail; the lines under each are its front matter.
 - **Backward-compatible config and schema.** New config keys default to the
   prior behavior; new DB columns are nullable with a migration.
 
+## Public API and the shim layer (explicit policy)
+
+The top-level modules (`llm_bidding.scoring`, `.auction`, `.history`,
+`.models`, `.policy`, `.utility`, `.config`, plus `llm_bidding.__init__`
+re-exports) are the **stable public façade** — external callers and tests
+import from them. The layered packages (`domain/`, `application/`,
+`infrastructure/`, `interfaces/`) are **internal** and may be reorganized
+without notice.
+
+Rules that follow:
+
+- Shims contain **only** `import *` re-exports — never logic. If you're adding
+  code to a top-level shim module, you're in the wrong file.
+- New public symbols must be reachable through a façade module; new internal
+  helpers should NOT be added to a façade.
+- Internal code imports from the layers directly (relative imports), never
+  through the façade — that keeps the dependency direction one-way.
+
 ## Working here
 
 - Run tests: `python -m unittest discover -s tests` (fully offline).

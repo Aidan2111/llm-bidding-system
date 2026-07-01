@@ -73,5 +73,42 @@ class CapabilityDocTests(unittest.TestCase):
         )
 
 
+class FacadePolicyTests(unittest.TestCase):
+    """Top-level façade modules re-export the layers; they must hold no logic.
+
+    Enforces the "Public API and the shim layer" policy in AGENTS.md: a `def`
+    or `class` appearing in a façade means the code belongs in domain/,
+    application/, infrastructure/, or interfaces/ instead.
+    """
+
+    FACADES = (
+        "auction.py",
+        "calibration.py",
+        "config.py",
+        "history.py",
+        "models.py",
+        "policy.py",
+        "scoring.py",
+        "utility.py",
+    )
+
+    def test_facades_contain_no_definitions(self):
+        import re
+
+        package_dir = ROOT / "src" / "llm_bidding"
+        pattern = re.compile(r"^(def |class )", re.MULTILINE)
+        offenders = [
+            name
+            for name in self.FACADES
+            if (package_dir / name).exists()
+            and pattern.search((package_dir / name).read_text(encoding="utf-8"))
+        ]
+        self.assertEqual(
+            offenders,
+            [],
+            "façade modules must only re-export from the layered packages",
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

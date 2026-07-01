@@ -205,6 +205,9 @@ class AuctionResult:
     winner: ScoredBid | None
     summary: str
     scoring_version: str = ""
+    # True when the winner was chosen on an exploration round (restricted to
+    # under-proven agents) rather than by plain utility ranking.
+    exploration_round: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -217,6 +220,7 @@ class AuctionResult:
             "winner": self.winner.to_dict() if self.winner else None,
             "summary": self.summary,
             "scoring_version": self.scoring_version,
+            "exploration_round": self.exploration_round,
         }
 
     def to_json(self) -> str:

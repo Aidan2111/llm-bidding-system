@@ -25,6 +25,18 @@ the system's primary entrypoint (library and `llm-bid bid`).
    build the summary, including the recommended supervision mode.
 6. **Record** to the history store unless `record=False`.
 
+## Cold-start exploration
+
+With everyone's history neutral, price decides the early auctions, so the
+cheapest agent wins them all and becomes the only agent that ever accrues
+outcome data — the field never gets proven. When `exploration.every_nth > 0`,
+every Nth *recorded* auction in a risk band restricts winner selection to
+eligible agents with fewer than `exploration.min_band_outcomes` reported
+outcomes in that band (when any exist). Deterministic — keyed off the stored
+auction count — and it never overrides policy: ineligible bids stay ineligible
+and abstain rules still apply. Exploration wins are flagged in the summary and
+on `AuctionResult.exploration_round`. Disabled by default (`every_nth: 0`).
+
 ## Determinism
 
 Worker results are collected into a dict and rebuilt in original agent order
