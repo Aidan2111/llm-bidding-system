@@ -45,6 +45,7 @@ def make_scored_bid(
         risk_fit_score=0.5,
         utility=utility if error is None else 0.0,
         error=error,
+        raw_estimated_cost_usd=cost if error is None else 0.0,
     )
 
 

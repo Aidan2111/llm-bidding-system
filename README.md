@@ -125,6 +125,7 @@ llm-bid agents list
 # 4. Operate the history database
 llm-bid show --auction-id 3f2c61a09b7e     # full stored auction + outcome
 llm-bid history --limit 20                  # recent auctions at a glance
+llm-bid pending                             # auctions still awaiting an outcome report
 llm-bid export --output history.jsonl      # everything as JSONL
 llm-bid prune --keep-days 90               # delete old auctions
 ```
@@ -242,6 +243,48 @@ All weights, the quality mix, the cost ceiling, the price table, and the
 calibration constants live in [`llm-bidding.config.json`](llm-bidding.config.json)
 (pass yours with `--config`). Prices in the default config are examples — keep
 them in sync with your providers' current pricing.
+
+### Per-band weights (task-aware routing)
+
+The same trade-off shouldn't govern a copy tweak and a destructive migration.
+`utility.band_weights` overrides the weights per risk band; any band you don't
+list falls back to the global `weights`:
+
+```json
+{
+  "utility": {
+    "weights": { "quality": 0.5, "price": 0.2, "risk_fit": 0.3 },
+    "band_weights": {
+      "Low Risk":  { "quality": 0.2, "price": 0.7, "risk_fit": 0.1 },
+      "High Risk": { "quality": 0.3, "price": 0.0, "risk_fit": 0.7 }
+    }
+  }
+}
+```
+
+Here cheap low-risk work is routed mostly on price, while high-risk work
+ignores price and leans on proven track record. Each band's weights must still
+sum to 1.0, and the band names must be the canonical risk bands. The applied
+weights are recorded on each auction.
+
+### Cold-start exploration (opt-in)
+
+With no history everyone scores a neutral 0.5, so price decides the early
+auctions — the cheapest model wins them all and becomes the only agent that
+ever accrues outcome data. Exploration breaks that feedback bias:
+
+```json
+{ "exploration": { "every_nth": 4, "min_band_outcomes": 3 } }
+```
+
+Every 4th recorded auction in a risk band is an *exploration round*: winner
+selection is restricted to eligible agents with fewer than 3 reported outcomes
+in that band (when any exist), so the whole field gets proven out. It is
+deterministic (keyed off the stored auction count), never overrides the High
+Risk floor or abstain rules, and is flagged in the auction summary. Disabled
+by default. The loop still depends on you reporting outcomes — `llm-bid
+pending` lists the auctions you owe a report on, and `stats` flags each
+agent's `UNREPORTED` wins.
 
 ### Cost calibration
 

@@ -153,5 +153,97 @@ class DepIntegrationTests(unittest.TestCase):
         self.assertEqual(stats.drifts, 1)
 
 
+class CountAndPendingTests(unittest.TestCase):
+    def setUp(self):
+        self.store = HistoryStore(":memory:")
+        self.addCleanup(self.store.close)
+
+    def _record(self, auction_id, task_text=RISKY_TASK, with_outcome=False):
+        winner = make_scored_bid("a", utility=0.9)
+        self.store.record_auction(
+            make_auction(auction_id, task_text=task_text, bids=(winner,), winner=winner)
+        )
+        if with_outcome:
+            self.store.record_outcome(
+                OutcomeReport(
+                    auction_id=auction_id,
+                    success=True,
+                    reported_at="2026-06-11T00:00:00+00:00",
+                )
+            )
+
+    def test_count_auctions_total_and_by_band(self):
+        self.assertEqual(self.store.count_auctions(), 0)
+        self._record("h1", task_text=RISKY_TASK)
+        self._record("h2", task_text=SAFE_TASK)
+        self.assertEqual(self.store.count_auctions(), 2)
+        self.assertEqual(self.store.count_auctions(band="High Risk"), 1)
+        self.assertEqual(self.store.count_auctions(band="Low Risk"), 1)
+        self.assertEqual(self.store.count_auctions(band="Medium Risk"), 0)
+
+    def test_list_unreported_returns_only_outcome_less_winners(self):
+        self._record("reported", with_outcome=True)
+        self._record("open1")
+        # A winnerless auction is not "pending" — there is nothing to report.
+        failed = make_scored_bid("a", error="boom")
+        self.store.record_auction(make_auction("nowin", bids=(failed,), winner=None))
+        rows = self.store.list_unreported()
+        self.assertEqual([r["auction_id"] for r in rows], ["open1"])
+        self.assertEqual(rows[0]["winner"], "a")
+
+    def test_list_unreported_sorts_mixed_offsets_by_actual_time(self):
+        winner = make_scored_bid("a", utility=0.9)
+        for auction_id, created_at in (
+            ("utc-old", "2026-06-10T00:30:00+00:00"),
+            ("naive-middle", "2026-06-10T00:45:00"),
+            ("offset-new", "2026-06-09T20:00:00-05:00"),
+        ):
+            self.store.record_auction(
+                make_auction(
+                    auction_id,
+                    bids=(winner,),
+                    winner=winner,
+                    created_at=created_at,
+                )
+            )
+
+        rows = self.store.list_unreported()
+        self.assertEqual(
+            [row["auction_id"] for row in rows],
+            ["utc-old", "naive-middle", "offset-new"],
+        )
+
+
+class PruneRobustnessTests(unittest.TestCase):
+    def test_unparseable_timestamps_are_kept_not_deleted(self):
+        store = HistoryStore(":memory:")
+        self.addCleanup(store.close)
+        old = make_scored_bid("a", utility=0.9)
+        store.record_auction(
+            make_auction("old", bids=(old,), winner=old,
+                         created_at="2026-01-01T00:00:00+00:00")
+        )
+        weird = make_scored_bid("a", utility=0.9)
+        store.record_auction(
+            make_auction("weird", bids=(weird,), winner=weird,
+                         created_at="not-a-timestamp")
+        )
+        deleted = store.prune(30, now="2026-06-10T00:00:00+00:00")
+        self.assertEqual(deleted, 1)  # only the genuinely old auction
+        remaining = {r["auction_id"] for r in store.list_recent()}
+        self.assertIn("weird", remaining)
+
+    def test_naive_timestamps_are_treated_as_utc(self):
+        store = HistoryStore(":memory:")
+        self.addCleanup(store.close)
+        naive = make_scored_bid("a", utility=0.9)
+        store.record_auction(
+            make_auction("naive", bids=(naive,), winner=naive,
+                         created_at="2026-01-01T00:00:00")  # no offset
+        )
+        deleted = store.prune(30, now="2026-06-10T00:00:00+00:00")
+        self.assertEqual(deleted, 1)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,9 @@ on:
 
 permissions:
   contents: read
+  # gitleaks-action lists PR commits via the API on pull_request events;
+  # without this it fails with "Resource not accessible by integration" (403).
+  pull-requests: read
 
 jobs:
   dependency-audit:

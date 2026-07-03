@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 from pathlib import Path
 
 from ..domain.models import AgentProfile
 from ..domain.policy import SELECTION_MODES, PolicyParams
+from .autonomy_scoring import BANDS
 
 
 class ConfigError(ValueError):
@@ -77,6 +78,11 @@ DEFAULT_FAST_PATH: dict[str, object] = {
     "default_output_tokens": 800,
 }
 
+DEFAULT_EXPLORATION: dict[str, object] = {
+    "every_nth": 0,
+    "min_band_outcomes": 3,
+}
+
 DEFAULT_HISTORY_DB = "~/.llm-bidding/history.db"
 
 _WEIGHT_EPSILON = 1e-6
@@ -119,6 +125,23 @@ class FastPathParams:
 
 
 @dataclass(frozen=True)
+class ExplorationParams:
+    """Cold-start exploration: periodically route to under-proven agents.
+
+    Without exploration, price dominates while every agent's history is
+    neutral, so the cheapest model wins the early auctions and becomes the
+    only agent that ever accrues outcome data. When ``every_nth`` > 0, every
+    Nth recorded auction in a risk band restricts winner selection to
+    eligible agents with fewer than ``min_band_outcomes`` reported outcomes
+    in that band (if any exist), so the field gets proven out.
+    ``every_nth = 0`` disables exploration entirely (the default).
+    """
+
+    every_nth: int = 0
+    min_band_outcomes: int = 3
+
+
+@dataclass(frozen=True)
 class BiddingConfig:
     agents: tuple[AgentProfile, ...]
     weights: UtilityWeights
@@ -131,6 +154,10 @@ class BiddingConfig:
     fast_path: FastPathParams
     history_db: str
     autonomy_score_config: str | None
+    # Optional per-risk-band weight overrides. Bands absent here fall back to
+    # the global `weights`, so the default (empty) reproduces prior behavior.
+    band_weights: dict[str, UtilityWeights] = field(default_factory=dict)
+    exploration: ExplorationParams = field(default_factory=ExplorationParams)
 
     def agent(self, name: str) -> AgentProfile:
         for profile in self.agents:
@@ -138,6 +165,24 @@ class BiddingConfig:
                 return profile
         raise ConfigError(f"Unknown agent {name!r}. Configured agents: "
                           + ", ".join(p.name for p in self.agents))
+
+    def weights_for(self, band: str | None) -> UtilityWeights:
+        """Resolve the utility weights for a risk band, falling back to global."""
+        if band is None:
+            return self.weights
+        return self.band_weights.get(band, self.weights)
+
+
+def _build_weights(raw_weights: dict, label: str) -> "UtilityWeights":
+    weights = UtilityWeights(
+        quality=_require_unit_interval(raw_weights.get("quality"), f"{label}.quality"),
+        price=_require_unit_interval(raw_weights.get("price"), f"{label}.price"),
+        risk_fit=_require_unit_interval(raw_weights.get("risk_fit"), f"{label}.risk_fit"),
+    )
+    total = weights.quality + weights.price + weights.risk_fit
+    if abs(total - 1.0) > _WEIGHT_EPSILON:
+        raise ConfigError(f"{label} must sum to 1.0 (got {total}).")
+    return weights
 
 
 def _require_unit_interval(value: object, label: str) -> float:
@@ -205,14 +250,25 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
 
     utility = {**DEFAULT_UTILITY, **raw.get("utility", {})}
     raw_weights = {**DEFAULT_UTILITY["weights"], **utility.get("weights", {})}
-    weights = UtilityWeights(
-        quality=_require_unit_interval(raw_weights.get("quality"), "utility.weights.quality"),
-        price=_require_unit_interval(raw_weights.get("price"), "utility.weights.price"),
-        risk_fit=_require_unit_interval(raw_weights.get("risk_fit"), "utility.weights.risk_fit"),
-    )
-    total = weights.quality + weights.price + weights.risk_fit
-    if abs(total - 1.0) > _WEIGHT_EPSILON:
-        raise ConfigError(f"utility.weights must sum to 1.0 (got {total}).")
+    weights = _build_weights(raw_weights, "utility.weights")
+
+    band_weights: dict[str, UtilityWeights] = {}
+    raw_band_weights = utility.get("band_weights", {})
+    if not isinstance(raw_band_weights, dict):
+        raise ConfigError("utility.band_weights must be an object keyed by risk band.")
+    for band, spec in raw_band_weights.items():
+        if band not in BANDS:
+            raise ConfigError(
+                f"utility.band_weights has unknown band {band!r}; expected one of "
+                + ", ".join(BANDS)
+            )
+        if not isinstance(spec, dict):
+            raise ConfigError(f"utility.band_weights[{band!r}] must be an object.")
+        # Partial overrides inherit from the *configured* global weights, not
+        # the built-in defaults — a band entry omitting a key must fall back to
+        # what the user actually set in utility.weights.
+        merged = {**raw_weights, **spec}
+        band_weights[band] = _build_weights(merged, f"utility.band_weights[{band!r}]")
 
     raw_mix = {**DEFAULT_UTILITY["quality_mix"], **utility.get("quality_mix", {})}
     mix_confidence = _require_unit_interval(
@@ -308,6 +364,16 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
         ),
     )
 
+    raw_exploration = {**DEFAULT_EXPLORATION, **raw.get("exploration", {})}
+    exploration = ExplorationParams(
+        every_nth=_require_non_negative_int(
+            raw_exploration.get("every_nth"), "exploration.every_nth"
+        ),
+        min_band_outcomes=_require_positive_int(
+            raw_exploration.get("min_band_outcomes"), "exploration.min_band_outcomes"
+        ),
+    )
+
     history_db = raw.get("history_db", DEFAULT_HISTORY_DB)
     if not isinstance(history_db, str) or not history_db.strip():
         raise ConfigError("'history_db' must be a non-empty string path.")
@@ -328,6 +394,8 @@ def _build_config(raw: dict[str, object]) -> BiddingConfig:
         fast_path=fast_path,
         history_db=history_db,
         autonomy_score_config=autonomy_config,
+        band_weights=band_weights,
+        exploration=exploration,
     )
 
 

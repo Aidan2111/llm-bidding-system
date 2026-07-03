@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS outcomes (
 );
 """
 
-_LATEST_SCHEMA_VERSION = 2
+_LATEST_SCHEMA_VERSION = 3
 
 # Each entry upgrades from version N-1 to N. New columns must be nullable so
 # rows recorded under older schemas keep working (NULL means "pre-upgrade").
@@ -74,7 +74,36 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "ALTER TABLE outcomes ADD COLUMN scope_drift INTEGER",
         "ALTER TABLE outcomes ADD COLUMN gate_score INTEGER",
     ),
+    # raw_estimated_cost_usd is the model's pre-calibration estimate; the cost
+    # ratio must be measured against it, not the ratio-adjusted estimate that
+    # feeds the price score (otherwise calibration is self-referential).
+    3: ("ALTER TABLE bids ADD COLUMN raw_estimated_cost_usd REAL",),
 }
+
+
+def _parse_created_at(value: object) -> datetime.datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        created = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=datetime.timezone.utc)
+    return created.astimezone(datetime.timezone.utc)
+
+
+_MAX_UTC_DATETIME = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
+
+
+def _created_at_sort_key(row: sqlite3.Row) -> tuple[int, datetime.datetime, str, str]:
+    created = _parse_created_at(row["created_at"])
+    return (
+        1 if created is None else 0,
+        created or _MAX_UTC_DATETIME,
+        str(row["created_at"]),
+        str(row["id"]),
+    )
 
 
 class HistoryStore:
@@ -152,9 +181,9 @@ class HistoryStore:
                 bid = scored.bid
                 self._connection.execute(
                     "INSERT INTO bids (auction_id, agent_name, model_id, confidence,"
-                    " approach, estimated_cost_usd, quality, price, risk_fit, utility,"
-                    " won, error, eligible, ineligible_reason)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    " approach, estimated_cost_usd, raw_estimated_cost_usd, quality,"
+                    " price, risk_fit, utility, won, error, eligible, ineligible_reason)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         result.auction_id,
                         scored.agent_name,
@@ -162,6 +191,7 @@ class HistoryStore:
                         bid.confidence if bid else None,
                         bid.approach if bid else None,
                         scored.estimated_cost_usd,
+                        scored.raw_estimated_cost_usd,
                         scored.quality_score,
                         scored.price_score,
                         scored.risk_fit_score,
@@ -227,7 +257,8 @@ class HistoryStore:
 
         outcome_rows = self._connection.execute(
             "SELECT bids.confidence AS confidence, outcomes.success AS success,"
-            " bids.estimated_cost_usd AS estimated_cost,"
+            " COALESCE(bids.raw_estimated_cost_usd, bids.estimated_cost_usd)"
+            " AS estimated_cost,"
             " outcomes.actual_cost_usd AS actual_cost,"
             " outcomes.scope_drift AS scope_drift"
             " FROM bids"
@@ -330,6 +361,39 @@ class HistoryStore:
             for row in rows
         ]
 
+    def count_auctions(self, band: str | None = None) -> int:
+        """Number of recorded auctions, optionally scoped to one risk band."""
+        if band is None:
+            row = self._connection.execute("SELECT COUNT(*) AS n FROM auctions").fetchone()
+        else:
+            row = self._connection.execute(
+                "SELECT COUNT(*) AS n FROM auctions WHERE intent_band = ?", (band,)
+            ).fetchone()
+        return row["n"]
+
+    def list_unreported(self, limit: int = 20) -> list[dict[str, object]]:
+        """Auctions that awarded a winner but never had an outcome reported.
+
+        Oldest first — these are the debts that starve calibration.
+        """
+        rows = self._connection.execute(
+            "SELECT auctions.id, auctions.created_at, auctions.intent_band,"
+            " auctions.winner_agent"
+            " FROM auctions LEFT JOIN outcomes ON outcomes.auction_id = auctions.id"
+            " WHERE auctions.winner_agent IS NOT NULL AND outcomes.auction_id IS NULL"
+            " ORDER BY auctions.id ASC",
+        ).fetchall()
+        rows = sorted(rows, key=_created_at_sort_key)[:limit]
+        return [
+            {
+                "auction_id": row["id"],
+                "created_at": row["created_at"],
+                "intent_band": row["intent_band"],
+                "winner": row["winner_agent"],
+            }
+            for row in rows
+        ]
+
     def get_auction(self, auction_id: str) -> dict[str, object]:
         """Full stored record for one auction: row, bids, and any outcome."""
         auction = self._connection.execute(
@@ -379,16 +443,20 @@ class HistoryStore:
             if now
             else datetime.datetime.now(datetime.timezone.utc)
         )
-        cutoff = (reference - datetime.timedelta(days=keep_days)).isoformat(
-            timespec="seconds"
-        )
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=datetime.timezone.utc)
+        cutoff = reference - datetime.timedelta(days=keep_days)
         with self._connection:
-            ids = [
-                row["id"]
-                for row in self._connection.execute(
-                    "SELECT id FROM auctions WHERE created_at < ?", (cutoff,)
-                )
-            ]
+            # Parse timestamps rather than comparing strings: mixed offsets or
+            # naive values would make a lexicographic comparison mis-prune.
+            # Rows with unparseable timestamps are kept, never deleted.
+            ids = []
+            for row in self._connection.execute("SELECT id, created_at FROM auctions"):
+                created = _parse_created_at(row["created_at"])
+                if created is None:
+                    continue
+                if created < cutoff:
+                    ids.append(row["id"])
             if not ids:
                 return 0
             placeholders = ",".join("?" for _ in ids)

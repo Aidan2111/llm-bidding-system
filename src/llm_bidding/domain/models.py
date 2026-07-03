@@ -167,6 +167,10 @@ class ScoredBid:
     error: str | None = None
     eligible: bool = True
     ineligible_reason: str | None = None
+    # The model's pre-calibration cost estimate. estimated_cost_usd above is
+    # this value scaled by the agent's cost ratio; the ratio is recomputed
+    # against this raw figure so calibration is not self-referential.
+    raw_estimated_cost_usd: float = 0.0
 
     @property
     def is_valid(self) -> bool:
@@ -186,6 +190,7 @@ class ScoredBid:
             "error": self.error,
             "eligible": self.eligible,
             "ineligible_reason": self.ineligible_reason,
+            "raw_estimated_cost_usd": self.raw_estimated_cost_usd,
         }
 
 
@@ -200,6 +205,9 @@ class AuctionResult:
     winner: ScoredBid | None
     summary: str
     scoring_version: str = ""
+    # True when winner selection was restricted to under-proven agents rather
+    # than the full eligible field; the restricted set may still abstain.
+    exploration_round: bool = False
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -212,6 +220,7 @@ class AuctionResult:
             "winner": self.winner.to_dict() if self.winner else None,
             "summary": self.summary,
             "scoring_version": self.scoring_version,
+            "exploration_round": self.exploration_round,
         }
 
     def to_json(self) -> str:

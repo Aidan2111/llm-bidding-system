@@ -91,6 +91,11 @@ def _build_parser() -> argparse.ArgumentParser:
     history = subparsers.add_parser("history", help="List recent auctions.")
     history.add_argument("--limit", type=int, default=20)
 
+    pending = subparsers.add_parser(
+        "pending", help="List auctions awaiting an outcome report (oldest first)."
+    )
+    pending.add_argument("--limit", type=int, default=20)
+
     export = subparsers.add_parser("export", help="Export all history as JSONL.")
     export.add_argument("--output", help="Write to a file instead of stdout.")
 
@@ -211,10 +216,12 @@ def _format_stats_text(rows: list[dict[str, object]]) -> str:
             + (f" [{row['band']}]" if row.get("band") else "")
         )
         brier = row["brier_score"]
+        unreported = row["wins"] - row["outcomes_reported"]
         lines.append(
             f"  entered {row['auctions_entered']}, wins {row['wins']}"
             f" (win rate {row['win_rate']:.2f}), outcomes {row['outcomes_reported']},"
             f" successes {row['successes']} (success rate {row['success_rate']:.3f})"
+            + (f", UNREPORTED {unreported}" if unreported > 0 else "")
         )
         lines.append(
             f"  brier {brier if brier is None else format(brier, '.3f')},"
@@ -265,6 +272,8 @@ def run(
                 return _cmd_show(args, store)
             if args.command == "history":
                 return _cmd_history(args, store)
+            if args.command == "pending":
+                return _cmd_pending(args, store)
             if args.command == "export":
                 return _cmd_export(args, store)
             if args.command == "prune":
@@ -467,6 +476,28 @@ def _cmd_history(args: argparse.Namespace, store: HistoryStore) -> int:
             f"{row['auction_id']:<14}{row['created_at']:<27}"
             f"{row['intent_band']:<13}{row['winner'] or '-':<16}{outcome}"
         )
+    print("\n".join(lines))
+    return EXIT_OK
+
+
+def _cmd_pending(args: argparse.Namespace, store: HistoryStore) -> int:
+    rows = store.list_unreported(args.limit)
+    if args.format == "json":
+        print(json.dumps(rows, indent=2, sort_keys=True))
+        return EXIT_OK
+    if not rows:
+        print("No auctions awaiting an outcome report.")
+        return EXIT_OK
+    lines = [f"{'auction':<14}{'created':<27}{'band':<13}{'winner'}"]
+    for row in rows:
+        lines.append(
+            f"{row['auction_id']:<14}{row['created_at']:<27}"
+            f"{row['intent_band']:<13}{row['winner']}"
+        )
+    lines.append(
+        "\nReport each with: llm-bid report --auction-id <id> --success|--failure"
+        " — unreported outcomes starve calibration."
+    )
     print("\n".join(lines))
     return EXIT_OK
 

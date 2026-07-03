@@ -282,6 +282,34 @@ class CliV2TestCase(_CliBase):
         self.assertIn("cost ratio", out)
         self.assertIn("scope drifts", out)
 
+    def test_pending_lists_unreported_auctions(self):
+        code, out, _ = self._run("pending")
+        self.assertEqual(code, cli.EXIT_OK)
+        self.assertIn("No auctions awaiting", out)
+
+        auction = self._bid_json(SAFE_TASK)
+        code, out, _ = self._run("pending")
+        self.assertEqual(code, cli.EXIT_OK)
+        self.assertIn(auction["auction_id"], out)
+        self.assertIn("starve calibration", out)
+
+        code, out, _ = self._run("--format", "json", "pending")
+        rows = json.loads(out)
+        self.assertEqual(rows[0]["auction_id"], auction["auction_id"])
+
+        self._run("report", "--auction-id", auction["auction_id"], "--success")
+        code, out, _ = self._run("pending")
+        self.assertIn("No auctions awaiting", out)
+
+    def test_stats_flags_unreported_wins(self):
+        auction = self._bid_json(SAFE_TASK)
+        winner = auction["winner"]["agent_name"]
+        code, out, _ = self._run("stats", "--agent", winner)
+        self.assertIn("UNREPORTED 1", out)
+        self._run("report", "--auction-id", auction["auction_id"], "--success")
+        code, out, _ = self._run("stats", "--agent", winner)
+        self.assertNotIn("UNREPORTED", out)
+
 
 if __name__ == "__main__":
     unittest.main()

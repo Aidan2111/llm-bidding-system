@@ -59,8 +59,9 @@ def compute_scored_bid(
     )
 
     # cost_ratio corrects for the agent's historical estimate bias
-    # (actual / estimated over reported outcomes); neutral 1.0 cold start.
-    cost = estimate_cost_usd(bid, agent) * stats.cost_ratio
+    # (actual / raw estimate over reported outcomes); neutral 1.0 cold start.
+    raw_cost = estimate_cost_usd(bid, agent)
+    cost = raw_cost * stats.cost_ratio
     price = 1.0 - min(cost / config.cost_ceiling_usd, 1.0)
 
     if band_stats.outcomes_reported >= config.calibration.min_band_samples:
@@ -68,7 +69,10 @@ def compute_scored_bid(
     else:
         risk_fit = stats.success_rate
 
-    weights = config.weights
+    # Per-band weight overrides when the config supports them; the band comes
+    # from the band-scoped stats. Falls back to the global weights otherwise.
+    weights_for = getattr(config, "weights_for", None)
+    weights = weights_for(band_stats.band) if weights_for else config.weights
     utility = (
         weights.quality * quality + weights.price * price + weights.risk_fit * risk_fit
     )
@@ -83,6 +87,7 @@ def compute_scored_bid(
         price_score=price,
         risk_fit_score=risk_fit,
         utility=utility,
+        raw_estimated_cost_usd=raw_cost,
     )
 
 

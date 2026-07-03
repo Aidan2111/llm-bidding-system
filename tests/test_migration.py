@@ -71,16 +71,17 @@ class MigrationTests(unittest.TestCase):
         connection.executescript(_V1_SCHEMA)
         connection.close()
 
-    def test_v1_database_upgrades_to_v2(self):
+    def test_v1_database_upgrades_to_latest(self):
         self._make_v1_db()
         with HistoryStore(self.db_path) as store:
-            self.assertEqual(store.schema_version, 2)
+            self.assertEqual(store.schema_version, 3)
             record = store.get_auction("old1")
             self.assertEqual(record["intent_band"], "Medium Risk")
             # Pre-upgrade rows read back with NULL new columns.
             self.assertIsNone(record["scoring_version"])
             self.assertIsNone(record["recommended_mode"])
             self.assertIsNone(record["bids"][0]["eligible"])
+            self.assertIsNone(record["bids"][0]["raw_estimated_cost_usd"])
             self.assertIsNone(record["outcome"]["scope_drift"])
             # Stats still compute over old rows.
             stats = store.agent_stats("claude-opus", CONFIG.calibration)
@@ -91,11 +92,11 @@ class MigrationTests(unittest.TestCase):
         self._make_v1_db()
         for _ in range(3):
             with HistoryStore(self.db_path) as store:
-                self.assertEqual(store.schema_version, 2)
+                self.assertEqual(store.schema_version, 3)
 
     def test_fresh_database_is_latest_version(self):
         with HistoryStore(self.db_path) as store:
-            self.assertEqual(store.schema_version, 2)
+            self.assertEqual(store.schema_version, 3)
 
     def test_file_database_uses_wal_and_busy_timeout(self):
         with HistoryStore(self.db_path) as store:
