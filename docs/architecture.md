@@ -18,8 +18,12 @@ src/llm_bidding/
 ```
 
 Top-level modules such as `llm_bidding.auction`, `llm_bidding.config`, and
-`llm_bidding.scoring` are compatibility wrappers. New code should import from
-the deeper package that owns the behavior.
+`llm_bidding.scoring` are compatibility wrappers and form the stable public
+facade. New code *inside this repository* should import from the deeper
+package that owns the behavior; external callers should import from the root
+`llm_bidding` exports or the wrapper modules, because the layered packages
+are internal and may be reorganized. See the shim-layer policy in
+[AGENTS.md](../AGENTS.md).
 
 ## Public Contracts
 
