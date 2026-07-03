@@ -41,7 +41,7 @@ all = ["anthropic>=0.40.0", "openai>=1.68.0"]
 dev = [
   "build>=1.2.2",
   "pip-audit>=2.7.3",
-  "twine>=5.1.1"
+  "twine>=6.1.0"
 ]
 
 [project.urls]
