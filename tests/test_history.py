@@ -191,6 +191,28 @@ class CountAndPendingTests(unittest.TestCase):
         self.assertEqual([r["auction_id"] for r in rows], ["open1"])
         self.assertEqual(rows[0]["winner"], "a")
 
+    def test_list_unreported_sorts_mixed_offsets_by_actual_time(self):
+        winner = make_scored_bid("a", utility=0.9)
+        for auction_id, created_at in (
+            ("utc-old", "2026-06-10T00:30:00+00:00"),
+            ("naive-middle", "2026-06-10T00:45:00"),
+            ("offset-new", "2026-06-09T20:00:00-05:00"),
+        ):
+            self.store.record_auction(
+                make_auction(
+                    auction_id,
+                    bids=(winner,),
+                    winner=winner,
+                    created_at=created_at,
+                )
+            )
+
+        rows = self.store.list_unreported()
+        self.assertEqual(
+            [row["auction_id"] for row in rows],
+            ["utc-old", "naive-middle", "offset-new"],
+        )
+
 
 class PruneRobustnessTests(unittest.TestCase):
     def test_unparseable_timestamps_are_kept_not_deleted(self):

@@ -81,6 +81,31 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
 }
 
 
+def _parse_created_at(value: object) -> datetime.datetime | None:
+    if not isinstance(value, str):
+        return None
+    try:
+        created = datetime.datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=datetime.timezone.utc)
+    return created.astimezone(datetime.timezone.utc)
+
+
+_MAX_UTC_DATETIME = datetime.datetime.max.replace(tzinfo=datetime.timezone.utc)
+
+
+def _created_at_sort_key(row: sqlite3.Row) -> tuple[int, datetime.datetime, str, str]:
+    created = _parse_created_at(row["created_at"])
+    return (
+        1 if created is None else 0,
+        created or _MAX_UTC_DATETIME,
+        str(row["created_at"]),
+        str(row["id"]),
+    )
+
+
 class HistoryStore:
     """Records auctions, bids, and reported outcomes; answers stats queries."""
 
@@ -356,9 +381,9 @@ class HistoryStore:
             " auctions.winner_agent"
             " FROM auctions LEFT JOIN outcomes ON outcomes.auction_id = auctions.id"
             " WHERE auctions.winner_agent IS NOT NULL AND outcomes.auction_id IS NULL"
-            " ORDER BY auctions.created_at ASC LIMIT ?",
-            (limit,),
+            " ORDER BY auctions.id ASC",
         ).fetchall()
+        rows = sorted(rows, key=_created_at_sort_key)[:limit]
         return [
             {
                 "auction_id": row["id"],
@@ -427,12 +452,9 @@ class HistoryStore:
             # Rows with unparseable timestamps are kept, never deleted.
             ids = []
             for row in self._connection.execute("SELECT id, created_at FROM auctions"):
-                try:
-                    created = datetime.datetime.fromisoformat(row["created_at"])
-                except (TypeError, ValueError):
+                created = _parse_created_at(row["created_at"])
+                if created is None:
                     continue
-                if created.tzinfo is None:
-                    created = created.replace(tzinfo=datetime.timezone.utc)
                 if created < cutoff:
                     ids.append(row["id"])
             if not ids:

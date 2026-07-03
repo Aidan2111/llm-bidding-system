@@ -222,10 +222,8 @@ def run_auction(
                 < exploration.min_band_outcomes
             ]
             if under_proven:
-                candidate, _ = select_winner(under_proven, config.policy)
-                if candidate is not None:
-                    winner = candidate
-                    exploration_round = True
+                winner, abstain_reason = select_winner(under_proven, config.policy)
+                exploration_round = True
     if not exploration_round:
         winner, abstain_reason = select_winner(valid, config.policy)
 

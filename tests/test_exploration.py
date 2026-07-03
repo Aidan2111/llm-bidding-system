@@ -100,6 +100,21 @@ class ExplorationTests(unittest.TestCase):
         self.assertIsNone(result.winner)
         self.assertIn("High Risk floor", result.summary)
 
+    def test_exploration_abstain_does_not_fall_back_to_proven_agent(self):
+        config = dataclasses.replace(
+            _explore_config(every_nth=2, min_band_outcomes=1),
+            policy=PolicyParams(min_award_utility=0.7),
+        )
+
+        first = run_auction(SAFE_TASK, config, _providers(), self.store)
+        self.assertEqual(first.winner.agent_name, "claude-opus")
+        _report(self.store, first.auction_id)
+
+        second = run_auction(SAFE_TASK, config, _providers(), self.store)
+        self.assertTrue(second.exploration_round)
+        self.assertIsNone(second.winner)
+        self.assertIn("min_award_utility", second.summary)
+
     def test_exploration_counts_are_band_scoped(self):
         config = _explore_config(every_nth=2, min_band_outcomes=1)
         # Two Low Risk auctions advance only the Low Risk counter.

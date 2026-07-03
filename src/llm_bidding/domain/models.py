@@ -205,8 +205,8 @@ class AuctionResult:
     winner: ScoredBid | None
     summary: str
     scoring_version: str = ""
-    # True when the winner was chosen on an exploration round (restricted to
-    # under-proven agents) rather than by plain utility ranking.
+    # True when winner selection was restricted to under-proven agents rather
+    # than the full eligible field; the restricted set may still abstain.
     exploration_round: bool = False
 
     def to_dict(self) -> dict[str, object]:
