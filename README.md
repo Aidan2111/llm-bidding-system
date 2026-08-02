@@ -350,9 +350,10 @@ whole system is testable offline.
 
 ## Robustness layers
 
-- **Scoring integration is firewalled.** `llm_bidding/scoring.py` is the only
-  module that imports `autonomy_score` — every band name, signal name, and
-  scoring call goes through it. On first use it runs a compatibility probe
+- **Scoring integration is firewalled.**
+  `llm_bidding/infrastructure/autonomy_scoring.py` (re-exported as
+  `llm_bidding.scoring`) is the only module that imports `autonomy_score` —
+  every band name, signal name, and scoring call goes through it. On first use it runs a compatibility probe
   against the installed dependency (API surface + band/mode vocabulary) and
   raises a loud `ScoringCompatibilityError` if the pinned dep has drifted,
   instead of silently mis-bucketing history. Each auction records the scoring

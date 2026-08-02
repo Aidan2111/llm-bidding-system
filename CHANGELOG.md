@@ -5,6 +5,16 @@ pragmatic changelog style: user-visible behavior, public API changes, storage
 migrations, provider changes, security posture, and operational docs belong in
 this file.
 
+## Unreleased
+
+- Fixed the README to name `infrastructure/autonomy_scoring.py` (not the
+  pre-restructure `scoring.py` path) as the module that firewalls the
+  `agent-autonomy-score` dependency, and clarified in `docs/architecture.md`
+  that the layered packages are internal while the root modules are the
+  stable public facade.
+- Raised the dev extra's `twine` floor to 6.1.0, the first release that can
+  validate the Metadata-Version 2.4 fields emitted by `setuptools>=77`.
+
 ## 0.2.0 - 2026-06-19
 
 - Restructured the package into `application`, `domain`, `infrastructure`,
