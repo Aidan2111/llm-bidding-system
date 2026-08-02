@@ -80,6 +80,7 @@ class RepositoryHealthTests(unittest.TestCase):
         self.assertIn("python -m pip install", test_workflow)
         self.assertIn("dist/*.whl", test_workflow)
         self.assertIn("llm-bid --help", test_workflow)
+        self.assertIn("windows-latest", test_workflow)
 
         security_workflow = self._read(".github/workflows/security.yml")
         self.assertIn("pip-audit", security_workflow)
