@@ -78,7 +78,7 @@ class RepositoryHealthTests(unittest.TestCase):
         test_workflow = self._read(".github/workflows/test.yml")
         self.assertIn("python -m build", test_workflow)
         self.assertIn("python -m pip install", test_workflow)
-        self.assertIn("dist/*.whl", test_workflow)
+        self.assertIn("Path('dist').glob('*.whl')", test_workflow)
         self.assertIn("llm-bid --help", test_workflow)
         self.assertIn("windows-latest", test_workflow)
 
