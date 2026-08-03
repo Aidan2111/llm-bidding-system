@@ -7,20 +7,25 @@ permissions:
 
 jobs:
   test:
+    name: ${{ matrix.check_name }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             python-version: "3.10"
+            check_name: "test (3.10)"
           - os: ubuntu-latest
             python-version: "3.11"
+            check_name: "test (3.11)"
           - os: ubuntu-latest
             python-version: "3.12"
+            check_name: "test (3.12)"
           # The package declares OS independence; run the supported baseline on
           # Windows to catch path and console-entry-point regressions.
           - os: windows-latest
             python-version: "3.11"
+            check_name: "windows smoke"
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
