@@ -113,9 +113,9 @@ class ImportGuardTests(unittest.TestCase):
         pattern = re.compile(r"^\s*(from|import)\s+autonomy_score", re.MULTILINE)
         allowed = {"infrastructure/autonomy_scoring.py"}
         offenders = [
-            str(path.relative_to(package_dir))
+            relative_path
             for path in package_dir.rglob("*.py")
-            if str(path.relative_to(package_dir)) not in allowed
+            if (relative_path := path.relative_to(package_dir).as_posix()) not in allowed
             and pattern.search(path.read_text(encoding="utf-8"))
         ]
         self.assertEqual(offenders, [])
