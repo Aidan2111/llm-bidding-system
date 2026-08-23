@@ -72,7 +72,7 @@ KNOWN_SIGNAL_PREFIXES = (
 
 # The commit pinned in pyproject.toml; named in compatibility errors so the
 # remediation (re-pin or upgrade) is obvious.
-PINNED_COMMIT = "183c073a846fc0c41cfebf35ce3bd328570b2bfc"
+PINNED_COMMIT = "29270c40a991a2e01e241b8cb72c8026c11bd53d"
 
 _PROBE_TEXT = "Update the button label text."
 
