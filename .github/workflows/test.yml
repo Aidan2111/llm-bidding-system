@@ -34,7 +34,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: python -m pip install --upgrade pip
       # Same pin as pyproject.toml; installed explicitly so -e can use --no-deps.
-      - run: pip install "agent-autonomy-score @ git+https://github.com/aidan2111/agent-autonomy-score@5bc49198489778d45b05a65711e30b2e1287d12e"
+      - run: pip install "agent-autonomy-score @ git+https://github.com/aidan2111/agent-autonomy-score@183c073a846fc0c41cfebf35ce3bd328570b2bfc"
       - run: pip install build twine
       - run: pip install -e . --no-deps
       # Drift canary: fails loudly if the pinned scoring dep no longer matches.

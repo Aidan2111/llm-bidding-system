@@ -381,7 +381,7 @@ whole system is testable offline.
 ## History schema
 
 A single SQLite file (default `~/.llm-bidding/history.db`, overridable via
-`--db`, `LLM_BIDDING_DB`, or the config). Schema v2:
+`--db`, `LLM_BIDDING_DB`, or the config). Schema v3:
 
 - `auctions` — id, timestamp, task text, intent score/band, **signal names as
   JSON** (so future risk-fit can move from band-level to signal-level without a

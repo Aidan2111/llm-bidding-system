@@ -1,0 +1,35 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Verify tag matches package version
+        run: |
+          python -c "import os, pathlib, sys, tomllib; version = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version']; sys.exit(0 if os.environ['GITHUB_REF_NAME'] == f'v{version}' else f'tag must be v{version}')"
+      - name: Test and build
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          PYTHONPATH=tests python -m unittest discover -s tests -v
+          python -m build
+          python -m twine check dist/*
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "$GITHUB_REF_NAME"

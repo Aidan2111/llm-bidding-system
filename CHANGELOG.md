@@ -7,6 +7,11 @@ this file.
 
 ## Unreleased
 
+- Updated the `agent-autonomy-score` source pin to the current tested `0.2.0`
+  revision and added tag-driven GitHub release artifact automation.
+- Corrected the README history documentation to identify schema v3.
+- Documented schema v3's raw pre-calibration bid-cost column, which keeps cost
+  calibration measurements from becoming self-referential.
 - Fixed the README to name `infrastructure/autonomy_scoring.py` (not the
   pre-restructure `scoring.py` path) as the module that firewalls the
   `agent-autonomy-score` dependency, and clarified in `docs/architecture.md`
