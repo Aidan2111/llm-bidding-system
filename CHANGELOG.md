@@ -7,6 +7,8 @@ this file.
 
 ## Unreleased
 
+## 0.2.0 - 2026-08-23
+
 - Updated the `agent-autonomy-score` source pin to the current tested `0.2.0`
   revision and added tag-driven GitHub release artifact automation.
 - Corrected the README history documentation to identify schema v3.
@@ -19,8 +21,6 @@ this file.
   stable public facade.
 - Raised the dev extra's `twine` floor to 6.1.0, the first release that can
   validate the Metadata-Version 2.4 fields emitted by `setuptools>=77`.
-
-## 0.2.0 - 2026-06-19
 
 - Restructured the package into `application`, `domain`, `infrastructure`,
   `interfaces`, and `providers` layers while keeping root compatibility modules.
