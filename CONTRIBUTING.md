@@ -20,7 +20,7 @@ If you are using `uv`, this is the local verification path used by maintainers:
 
 ```bash
 PYTHONPATH=tests uv run --python 3.12 --with-editable . \
-  --with git+https://github.com/aidan2111/agent-autonomy-score@5bc49198489778d45b05a65711e30b2e1287d12e \
+  --with git+https://github.com/aidan2111/agent-autonomy-score@183c073a846fc0c41cfebf35ce3bd328570b2bfc \
   python -m unittest discover -s tests -v
 ```
 

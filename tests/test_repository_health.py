@@ -92,6 +92,11 @@ class RepositoryHealthTests(unittest.TestCase):
         self.assertIn("package-ecosystem: \"pip\"", dependabot)
         self.assertIn("package-ecosystem: \"github-actions\"", dependabot)
 
+        release_workflow = self._read(".github/workflows/release.yml")
+        self.assertIn("tags:", release_workflow)
+        self.assertIn("python -m twine check", release_workflow)
+        self.assertIn("gh release create", release_workflow)
+
     def test_contributor_templates_exist(self):
         required_templates = [
             ".github/PULL_REQUEST_TEMPLATE.md",

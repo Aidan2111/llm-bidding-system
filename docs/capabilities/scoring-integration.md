@@ -14,6 +14,11 @@ read_when: changing how risk scores enter the system, bumping the agent-autonomy
 module permitted to `import autonomy_score`
 (`tests/test_scoring_adapter.py` enforces this with a grep guard).
 
+The source dependency is pinned to commit `183c073a846f`, the tested
+`0.2.0` scorer revision. A future public-index release should replace the Git
+reference with a compatible version range after `agent-autonomy-score` is
+published independently.
+
 ## Why it exists
 
 Risk bands (`Low/Medium/High Risk`) and signal names

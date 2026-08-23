@@ -68,3 +68,15 @@ future release needs a destructive migration, it must be called out in
 The scripts under `examples/` are intentionally manual because they use real
 provider routes or local model servers. They are useful before a release or
 provider change, but CI should stay offline and deterministic.
+
+## Releases
+
+The package version lives in `pyproject.toml` and user-visible changes belong in
+`CHANGELOG.md`. A `vX.Y.Z` tag whose value matches the package version triggers
+`.github/workflows/release.yml`; that workflow repeats the test and package
+checks and creates a GitHub release containing the wheel and source archive.
+
+The current package intentionally consumes `agent-autonomy-score` from an exact
+Git commit. Before publishing this project to PyPI, publish the scorer as a
+versioned distribution and replace the direct reference with a compatible
+version range. Public package indexes discourage direct URL dependencies.
