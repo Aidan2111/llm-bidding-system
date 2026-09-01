@@ -14,6 +14,30 @@ class RepositoryHealthTests(unittest.TestCase):
     def _read(self, relative_path: str) -> str:
         return (REPO_ROOT / relative_path).read_text(encoding="utf-8")
 
+    def test_public_onboarding_and_manual_publish_contract(self):
+        readme = self._read("README.md")
+        for marker in (
+            "actions/workflows/test.yml/badge.svg",
+            "actions/workflows/security.yml/badge.svg",
+            "releases/latest",
+            "License-MIT",
+            "Python-3.10%2B",
+            "Install for use",
+            "Contributor setup",
+            "--dry-run",
+        ):
+            with self.subTest(marker=marker):
+                self.assertIn(marker, readme)
+
+        publish = self._read(".github/workflows/publish-pypi.yml")
+        self.assertIn("workflow_dispatch:", publish)
+        self.assertNotIn("release:\n", publish)
+        self.assertIn("id-token: write", publish)
+        self.assertIn("Verify requested tag", publish)
+        self.assertIn("twine check", publish)
+        self.assertIn("pypa/gh-action-pypi-publish", publish)
+
+
     def test_community_and_support_files_exist_and_are_linked(self):
         required_files = [
             "CONTRIBUTING.md",

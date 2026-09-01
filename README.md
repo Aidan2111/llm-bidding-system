@@ -1,5 +1,11 @@
 # llm-bidding-system
 
+[![Tests](https://github.com/Aidan2111/llm-bidding-system/actions/workflows/test.yml/badge.svg?branch=main)](https://github.com/Aidan2111/llm-bidding-system/actions/workflows/test.yml)
+[![Security](https://github.com/Aidan2111/llm-bidding-system/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/Aidan2111/llm-bidding-system/actions/workflows/security.yml)
+[![Release](https://img.shields.io/github/v/release/Aidan2111/llm-bidding-system)](https://github.com/Aidan2111/llm-bidding-system/releases/latest)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](pyproject.toml)
+
 An auction router for LLM work. Multiple LLM agents (e.g. Claude Opus, Claude
 Sonnet, a GPT model, or a local Ollama model) **bid** on a piece of work, and a
 configurable utility function picks the winner. Each bid combines three
@@ -61,22 +67,39 @@ Project and OSS-readiness docs:
 - [Operations guide](docs/operations.md)
 - [OSS readiness checklist](docs/oss-readiness.md)
 
+### Install for use
+
+Install the current tagged wheel directly from the GitHub release. The wheel
+retains the exact audited `agent-autonomy-score` Git pin used by v0.2.0:
+
 ```bash
-pip install -e .                 # core (pulls agent-autonomy-score from GitHub)
-pip install -e ".[anthropic]"    # + Anthropic SDK for live Claude bids
-pip install -e ".[openai]"       # + OpenAI SDK for live GPT bids
-pip install -e ".[all]"          # both
+python -m pip install \
+  https://github.com/Aidan2111/llm-bidding-system/releases/download/v0.2.0/llm_bidding_system-0.2.0-py3-none-any.whl
+llm-bid bid --intent-text "Refactor a persistence layer" --dry-run
+```
+
+Install an optional provider SDK when you are ready to make live calls:
+
+```bash
+python -m pip install "anthropic>=0.40.0"  # Anthropic
+python -m pip install "openai>=1.68.0"     # OpenAI-compatible providers
+```
+
+### Contributor setup
+
+Use editable installs only when changing the router or its scoring dependency:
+
+```bash
+git clone https://github.com/Aidan2111/llm-bidding-system.git
+git clone https://github.com/Aidan2111/agent-autonomy-score.git
+cd llm-bidding-system
+python -m pip install -e ../agent-autonomy-score
+python -m pip install -e ".[all,dev]" --no-deps
+PYTHONPATH=tests python -m unittest discover -s tests -v
 ```
 
 Ollama/local models use Python's standard library HTTP client, so they do not
 need an extra Python package or an API key.
-
-For local development against a sibling checkout of the scoring repo:
-
-```bash
-pip install -e ../agent-autonomy-score
-pip install -e . --no-deps
-```
 
 ## Quick start (no API keys needed)
 

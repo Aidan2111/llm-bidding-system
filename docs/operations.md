@@ -80,3 +80,19 @@ The current package intentionally consumes `agent-autonomy-score` from an exact
 Git commit. Before publishing this project to PyPI, publish the scorer as a
 versioned distribution and replace the direct reference with a compatible
 version range. Public package indexes discourage direct URL dependencies.
+
+`.github/workflows/publish-pypi.yml` encodes that sequence as a safe manual
+gate. It validates an existing tag, runs the offline suite, builds and checks
+the artifacts, and refuses to continue while `pyproject.toml` contains a direct
+URL dependency. Once `agent-autonomy-score` is available on PyPI:
+
+1. replace the Git URL with a bounded released range such as
+   `agent-autonomy-score>=0.2,<0.3`;
+2. test installation from a clean environment and cut a new GitHub release;
+3. configure the repository, `publish-pypi.yml` workflow, and `pypi`
+   environment as a PyPI trusted publisher; and
+4. manually dispatch **Publish to PyPI** with the new release tag.
+
+The workflow uses OpenID Connect and needs no long-lived PyPI token. Until it
+succeeds, installation documentation must continue to use GitHub release
+artifacts and must not claim the package is available from PyPI.
