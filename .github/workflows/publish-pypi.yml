@@ -1,0 +1,50 @@
+name: Publish to PyPI
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish after dependency migration
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/llm-bidding-system
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Verify requested tag
+        env:
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: |
+          python -c "import os, pathlib, subprocess, sys, tomllib; requested = os.environ['REQUESTED_TAG']; version = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version']; exact = subprocess.check_output(['git', 'describe', '--tags', '--exact-match'], text=True).strip(); sys.exit(0 if requested == exact == f'v{version}' else f'requested tag, checkout tag, and v{{version}} must match: {{requested!r}}, {{exact!r}}, v{{version}}')"
+      - name: Verify PyPI-compatible dependencies
+        run: |
+          python -c "import pathlib, sys, tomllib; dependencies = tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['dependencies']; direct = [item for item in dependencies if ' @ ' in item]; sys.exit('PyPI publication is blocked by direct URL dependencies: ' + ', '.join(direct) if direct else 0)"
+      - name: Test and build artifacts
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          PYTHONPATH=tests python -m unittest discover -s tests -v
+          python -m build
+          python -m twine check dist/*
+      - name: Publish artifacts with trusted publishing
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: dist/
